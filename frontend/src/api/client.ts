@@ -111,6 +111,27 @@ class ApiClient {
   }> {
     return this.request('/audit-logs/verify-chain');
   }
+
+  // Multi-Key Rotating Gemini Cluster Status
+  async getKeyPoolStatus(): Promise<{
+    cluster_status: string;
+    total_keys: number;
+    active_healthy_keys: number;
+    cooldown_keys: number;
+    cooldown_duration_seconds: number;
+    keys: Array<{
+      slot_id: string;
+      masked_key: string;
+      status: string;
+      cooldown_remaining_seconds: number;
+      total_requests: number;
+      total_successes: number;
+      rate_limit_hits: number;
+      last_error: string | null;
+    }>;
+  }> {
+    return this.request('/system/key-pool-status');
+  }
 }
 
 export const apiClient = new ApiClient();

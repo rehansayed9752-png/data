@@ -386,6 +386,13 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                   System Info
                 </div>
                 <div className="p-2.5 rounded-md bg-surface-card border border-line-subtle text-[10.5px] font-mono text-ink-muted space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-ink-faint">AI Cluster:</span>
+                    <span className="text-accent flex items-center space-x-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse inline-block"></span>
+                      <span>4x Gemini Pool Active</span>
+                    </span>
+                  </div>
                   <div className="flex justify-between">
                     <span className="text-ink-faint">Node:</span>
                     <span className="text-ink-body">BLR-CID-HQ-04</span>
