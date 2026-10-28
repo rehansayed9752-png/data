@@ -92,45 +92,54 @@ class SketchGeneratorService:
             headers["Authorization"] = f"Bearer {settings.CF_WORKER_API_KEY}"
             headers["x-api-key"] = settings.CF_WORKER_API_KEY
 
-        payload = {
-            "prompt": prompt,
-            "model": settings.CF_IMAGE_MODEL,
-            "seed": seed,
-            "steps": steps,
-            "num_steps": steps,
-        }
+        models_to_try = [
+            settings.CF_IMAGE_MODEL,
+            "@cf/bytedance/stable-diffusion-xl-lightning",
+            "@cf/stabilityai/stable-diffusion-xl-base-1.0",
+        ]
+        unique_models = []
+        for m in models_to_try:
+            if m and m not in unique_models:
+                unique_models.append(m)
 
-        try:
-            async with httpx.AsyncClient(timeout=40.0, follow_redirects=True) as http_client:
-                resp = await http_client.post(
-                    settings.CF_WORKER_URL,
-                    json=payload,
-                    headers=headers,
-                )
-                if resp.status_code == 200 and len(resp.content) > 100:
-                    content_type = resp.headers.get("content-type", "").lower()
-                    if "image" in content_type or resp.content.startswith(b"\x89PNG") or resp.content.startswith(b"\xff\xd8"):
-                        return resp.content
+        for model_id in unique_models:
+            payload = {
+                "prompt": prompt,
+                "model": model_id,
+                "seed": seed,
+            }
 
-                    try:
-                        data = resp.json()
-                        img_b64 = None
-                        if isinstance(data, dict):
-                            img_b64 = data.get("image") or data.get("result", {}).get("image") or data.get("data")
-                        elif isinstance(data, str):
-                            img_b64 = data
-                        if img_b64 and isinstance(img_b64, str):
-                            if "," in img_b64:
-                                img_b64 = img_b64.split(",", 1)[1]
-                            return base64.b64decode(img_b64)
-                    except Exception as json_err:
-                        logger.warning(f"[SketchGenerator] JSON decode error from Cloudflare: {json_err}")
-                else:
-                    logger.warning(
-                        f"[SketchGenerator] Cloudflare Worker returned HTTP {resp.status_code}: {resp.text[:200]}"
+            try:
+                async with httpx.AsyncClient(timeout=45.0, follow_redirects=True) as http_client:
+                    resp = await http_client.post(
+                        settings.CF_WORKER_URL,
+                        json=payload,
+                        headers=headers,
                     )
-        except Exception as e:
-            logger.warning(f"[SketchGenerator] Cloudflare Worker exception: {e}")
+                    if resp.status_code == 200 and len(resp.content) > 100:
+                        content_type = resp.headers.get("content-type", "").lower()
+                        if "image" in content_type or resp.content.startswith(b"\x89PNG") or resp.content.startswith(b"\xff\xd8"):
+                            return resp.content
+
+                        try:
+                            data = resp.json()
+                            img_b64 = None
+                            if isinstance(data, dict):
+                                img_b64 = data.get("image") or data.get("result", {}).get("image") or data.get("data")
+                            elif isinstance(data, str):
+                                img_b64 = data
+                            if img_b64 and isinstance(img_b64, str):
+                                if "," in img_b64:
+                                    img_b64 = img_b64.split(",", 1)[1]
+                                return base64.b64decode(img_b64)
+                        except Exception as json_err:
+                            logger.warning(f"[SketchGenerator] JSON decode error from Cloudflare ({model_id}): {json_err}")
+                    else:
+                        logger.warning(
+                            f"[SketchGenerator] Cloudflare Worker model {model_id} returned HTTP {resp.status_code}: {resp.text[:150]}"
+                        )
+            except Exception as e:
+                logger.warning(f"[SketchGenerator] Cloudflare Worker exception on {model_id}: {e}")
 
         return None
 
