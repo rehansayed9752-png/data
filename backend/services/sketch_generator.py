@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import io
 import logging
 import time
@@ -72,6 +73,68 @@ class SketchGeneratorService:
     """
 
     @staticmethod
+    async def _call_cloudflare_worker(
+        prompt: str,
+        seed: int,
+        steps: int = 4,
+    ) -> Optional[bytes]:
+        """
+        Calls Cloudflare Worker running @cf/black-forest-labs/flux-1-schnell (170+ free images/day).
+        Authenticates via Authorization: Bearer <key> and x-api-key: <key>.
+        """
+        if not settings.CF_WORKER_URL:
+            return None
+
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if settings.CF_WORKER_API_KEY:
+            headers["Authorization"] = f"Bearer {settings.CF_WORKER_API_KEY}"
+            headers["x-api-key"] = settings.CF_WORKER_API_KEY
+
+        payload = {
+            "prompt": prompt,
+            "model": settings.CF_IMAGE_MODEL,
+            "seed": seed,
+            "steps": steps,
+            "num_steps": steps,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=40.0, follow_redirects=True) as http_client:
+                resp = await http_client.post(
+                    settings.CF_WORKER_URL,
+                    json=payload,
+                    headers=headers,
+                )
+                if resp.status_code == 200 and len(resp.content) > 100:
+                    content_type = resp.headers.get("content-type", "").lower()
+                    if "image" in content_type or resp.content.startswith(b"\x89PNG") or resp.content.startswith(b"\xff\xd8"):
+                        return resp.content
+
+                    try:
+                        data = resp.json()
+                        img_b64 = None
+                        if isinstance(data, dict):
+                            img_b64 = data.get("image") or data.get("result", {}).get("image") or data.get("data")
+                        elif isinstance(data, str):
+                            img_b64 = data
+                        if img_b64 and isinstance(img_b64, str):
+                            if "," in img_b64:
+                                img_b64 = img_b64.split(",", 1)[1]
+                            return base64.b64decode(img_b64)
+                    except Exception as json_err:
+                        logger.warning(f"[SketchGenerator] JSON decode error from Cloudflare: {json_err}")
+                else:
+                    logger.warning(
+                        f"[SketchGenerator] Cloudflare Worker returned HTTP {resp.status_code}: {resp.text[:200]}"
+                    )
+        except Exception as e:
+            logger.warning(f"[SketchGenerator] Cloudflare Worker exception: {e}")
+
+        return None
+
+    @staticmethod
     async def generate_or_refine(
         case_id: str,
         iteration_number: int,
@@ -89,7 +152,32 @@ class SketchGeneratorService:
         output_filename = f"{case_id}_iter_{iteration_number}.png"
         output_path = settings.SKETCH_DIR / output_filename
 
-        # 1. Primary Engine: Gemini 2.5 Flash Image with Multi-Key Failover
+        # 1. Primary Engine: Cloudflare Worker AI (@cf/black-forest-labs/flux-1-schnell)
+        if settings.CF_WORKER_URL and settings.CF_WORKER_API_KEY and settings.CF_WORKER_API_KEY != "API-KEY":
+            try:
+                cf_prompt = (
+                    f"Authentic police forensic artist composite sketch, hand-drawn with 2B and 4B graphite pencils "
+                    f"on clean paper, detailed anatomical cross-hatching, frontal mugshot passport view, neutral expression, "
+                    f"monochrome greyscale. Subject details: {full_compiled_prompt}"
+                )
+                if delta_edit_instruction:
+                    cf_prompt += f" Surgical adjustment: {delta_edit_instruction}"
+
+                raw_bytes = await SketchGeneratorService._call_cloudflare_worker(
+                    prompt=cf_prompt,
+                    seed=case_seed,
+                    steps=4,
+                )
+                if raw_bytes:
+                    img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+                    img = _apply_forensic_post_filter(img, render_style)
+                    img.save(output_path, format="PNG")
+                    latency = int((time.perf_counter() - start_ts) * 1000)
+                    return str(output_path), f"cloudflare-flux-schnell (seed-{case_seed})", latency
+            except Exception as cf_err:
+                logger.warning(f"[SketchGenerator] Cloudflare Worker generation error: {cf_err}. Failing over...")
+
+        # 2. Secondary Engine: Gemini Key Pool (if active/paid)
         if key_pool.slots:
             try:
                 # Prepare contents
@@ -213,6 +301,33 @@ class SketchGeneratorService:
             output_path = settings.SKETCH_DIR / output_filename
             sub_start = time.perf_counter()
 
+            # 1. Try Cloudflare Worker first
+            if settings.CF_WORKER_URL and settings.CF_WORKER_API_KEY and settings.CF_WORKER_API_KEY != "API-KEY":
+                try:
+                    cf_var_prompt = (
+                        f"Authentic police forensic artist composite sketch, graphite on paper, frontal mugshot. "
+                        f"{edit_instruction}. Variation {label}: {desc}."
+                    )
+                    var_seed = case_seed + ord(label) * 23
+                    raw_bytes = await SketchGeneratorService._call_cloudflare_worker(
+                        prompt=cf_var_prompt,
+                        seed=var_seed,
+                        steps=4,
+                    )
+                    if raw_bytes:
+                        img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+                        img = _apply_forensic_post_filter(img, render_style)
+                        img.save(output_path, format="PNG")
+                        return {
+                            "label": label,
+                            "description": desc,
+                            "image_url": f"/static/sketches/{output_filename}",
+                            "ai_provider_used": f"cloudflare-flux-schnell (var-{label})",
+                            "generation_latency_ms": int((time.perf_counter() - sub_start) * 1000),
+                        }
+                except Exception as cf_var_err:
+                    logger.warning(f"[SketchGenerator] Variation {label} on Cloudflare failed: {cf_var_err}")
+
             if slot:
                 try:
                     contents = [
@@ -309,6 +424,28 @@ class SketchGeneratorService:
             f"Add {disguise_type} as an accessory overlay.",
         )
 
+        # 1. Try Cloudflare Worker first
+        if settings.CF_WORKER_URL and settings.CF_WORKER_API_KEY and settings.CF_WORKER_API_KEY != "API-KEY":
+            try:
+                cf_disguise_prompt = (
+                    f"Authentic police forensic composite sketch, graphite pencil on paper, frontal mugshot. "
+                    f"Criminal disguise modification: {instruction}. Monochrome greyscale."
+                )
+                raw_bytes = await SketchGeneratorService._call_cloudflare_worker(
+                    prompt=cf_disguise_prompt,
+                    seed=case_seed + 777,
+                    steps=4,
+                )
+                if raw_bytes:
+                    img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+                    img = _apply_forensic_post_filter(img, render_style)
+                    img.save(output_path, format="PNG")
+                    latency = int((time.perf_counter() - start_ts) * 1000)
+                    return str(output_path), "cloudflare-flux-schnell (disguise)", latency
+            except Exception as cf_d_err:
+                logger.warning(f"[SketchGenerator] Cloudflare disguise failed: {cf_d_err}")
+
+        # 2. Try Gemini
         if key_pool.slots:
             try:
                 contents = [

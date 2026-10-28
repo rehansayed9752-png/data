@@ -143,17 +143,32 @@ async def compile_facial_state(
     )
 
     def _call_gemini_compilation(client: genai.Client, slot: KeySlot) -> StateCompilationResult:
-        response = client.models.generate_content(
-            model=settings.GEMINI_TEXT_MODEL,
-            contents=user_content,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                response_mime_type="application/json",
-                response_schema=StateCompilationResult,
-                temperature=0.1,
-            ),
-        )
-        return StateCompilationResult.model_validate_json(response.text)
+        candidate_models = [settings.GEMINI_TEXT_MODEL, "gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-3.5-flash-lite"]
+        last_error = None
+        for model_id in candidate_models:
+            if not model_id:
+                continue
+            try:
+                response = client.models.generate_content(
+                    model=model_id,
+                    contents=user_content,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        response_mime_type="application/json",
+                        response_schema=StateCompilationResult,
+                        temperature=0.1,
+                    ),
+                )
+                return StateCompilationResult.model_validate_json(response.text)
+            except Exception as ex:
+                last_error = ex
+                # If model is deprecated or not found, try next candidate
+                if "not found" in str(ex).lower() or "no longer available" in str(ex).lower():
+                    continue
+                raise ex
+        if last_error:
+            raise last_error
+        raise RuntimeError("No candidate Gemini text models available")
 
     try:
         result, provider_tag = await key_pool.execute_with_failover(
