@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from db.database import CaseModel, OfficerModel, SketchIterationModel, get_db
 from models.schemas import (
     DisguiseResultSchema,
@@ -55,21 +56,21 @@ async def generate_sketch(
     current_iter_num = len(all_iterations) + 1
     is_initial = current_iter_num == 1
 
-    # Determine base facial state & previous image
+    # Determine base facial state & previous image with guaranteed absolute path
     prev_image_path = None
     if sketch_req.parent_iteration_id:
         parent_iter = next((it for it in all_iterations if it.id == sketch_req.parent_iteration_id), None)
         if parent_iter:
             base_state = FacialStateJSON(**parent_iter.facial_state_snapshot)
             filename = Path(parent_iter.image_url).name
-            prev_image_path = f"data/sketches/{filename}"
+            prev_image_path = str(settings.SKETCH_DIR / filename)
         else:
             base_state = FacialStateJSON(**case.current_facial_state)
     elif all_iterations:
         latest = all_iterations[0]
         base_state = FacialStateJSON(**latest.facial_state_snapshot)
         filename = Path(latest.image_url).name
-        prev_image_path = f"data/sketches/{filename}"
+        prev_image_path = str(settings.SKETCH_DIR / filename)
     else:
         base_state = FacialStateJSON(**case.current_facial_state)
 
@@ -81,7 +82,7 @@ async def generate_sketch(
         is_initial=is_initial,
     )
 
-    # Safety check
+    # Safety policy check
     if not compilation_result.is_safe_request:
         raise HTTPException(
             status_code=400,
@@ -166,7 +167,7 @@ async def generate_variations(
 ):
     """
     Parallel Multi-Key Variations Generator (USP #3 & #10):
-    Dispatches 3 concurrent requests across separate Google AI Studio keys in the pool.
+    Dispatches concurrent requests across separate Google AI Studio keys in the pool.
     """
     case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
     case = case_res.scalar_one_or_none()
@@ -183,7 +184,7 @@ async def generate_variations(
     if not iteration:
         raise HTTPException(status_code=404, detail="Iteration not found")
 
-    local_img_path = f"data/sketches/{Path(iteration.image_url).name}"
+    local_img_path = str(settings.SKETCH_DIR / Path(iteration.image_url).name)
     variations = await SketchGeneratorService.generate_three_variations(
         case_id=case.id,
         iteration_number=iteration.iteration_number,
@@ -240,7 +241,7 @@ async def simulate_disguise(
     if not iteration:
         raise HTTPException(status_code=404, detail="Iteration not found")
 
-    local_img_path = f"data/sketches/{Path(iteration.image_url).name}"
+    local_img_path = str(settings.SKETCH_DIR / Path(iteration.image_url).name)
     saved_path, provider, latency_ms = await SketchGeneratorService.simulate_disguise(
         case_id=case.id,
         iteration_number=iteration.iteration_number,
@@ -338,7 +339,7 @@ async def export_highres(
     officer = officer_res.scalar_one_or_none()
     officer_badge = officer.badge_number if officer else "KA-4091"
 
-    local_img_path = f"data/sketches/{Path(iteration.image_url).name}"
+    local_img_path = str(settings.SKETCH_DIR / Path(iteration.image_url).name)
 
     audit_entry = await log_audit_event(
         session=db,

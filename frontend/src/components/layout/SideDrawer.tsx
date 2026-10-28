@@ -390,7 +390,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                     <span className="text-ink-faint">AI Cluster:</span>
                     <span className="text-accent flex items-center space-x-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse inline-block"></span>
-                      <span>4x Gemini Pool Active</span>
+                      <span>2x Gemini Pool Active</span>
                     </span>
                   </div>
                   <div className="flex justify-between">
