@@ -148,7 +148,7 @@ class MugshotDatabaseModel(Base):
 class AccessAuditLogModel(Base):
     __tablename__ = "access_audit_logs"
 
-    seq_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    seq_id = Column(Integer, primary_key=True, autoincrement=True)
     id = Column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     officer_id = Column(String(36), ForeignKey("officers.id"), nullable=False, index=True)
     badge_number = Column(String(50), nullable=False)
@@ -213,4 +213,35 @@ async def init_db():
                 ),
             ]
             session.add_all(demo_officers)
+            await session.commit()
+
+        # Seed Demo Case if not present
+        res_case = await session.execute(select(CaseModel).where(CaseModel.id == 'case-2026-0891'))
+        if not res_case.scalar_one_or_none():
+            demo_case = CaseModel(
+                id='case-2026-0891',
+                case_number='CASE-2026-0891',
+                title='MG Road Commercial Vault Armed Robbery',
+                location='Brigade Road Junction, Bengaluru',
+                witness_alias='Witness #4 (Bank Teller)',
+                status='active',
+                render_style='forensic_graphite',
+                case_seed=9204,
+                lead_officer_id='11111111-1111-1111-1111-111111111111',
+                current_facial_state={
+                    'gender': 'male',
+                    'age_range': '32-38',
+                    'head_face_shape': 'Angular square jawline with high defined cheekbones',
+                    'eyes': 'Deep-set hooded dark brown eyes, intense gaze',
+                    'eyebrows': 'Thick arched dark eyebrows, slight scar in left eyebrow arch',
+                    'nose': 'Straight prominent nasal bridge with slightly rounded tip',
+                    'mouth_lips': 'Thin upper lip, slightly fuller lower lip, neutral compressed expression',
+                    'jawline_chin': 'Prominent square mandibular angle with distinct cleft chin',
+                    'hair_style': 'Short cropped dark hair, buzzed sides, receding temporal corners',
+                    'skin_tone': 'Warm medium-tan complexion',
+                    'scars_marks': 'Small vertical linear scar through left eyebrow arch',
+                    'facial_hair': 'Sparse 3-day dark stubble along jaw and upper lip',
+                },
+            )
+            session.add(demo_case)
             await session.commit()

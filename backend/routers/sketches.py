@@ -40,7 +40,22 @@ async def generate_sketch(
     case_res = await db.execute(case_query)
     case = case_res.scalar_one_or_none()
     if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
+        lead_officer_id = sketch_req.officer_id or "11111111-1111-1111-1111-111111111111"
+        case = CaseModel(
+            id=case_id,
+            case_number=f"CASE-{case_id.upper()}",
+            title="Forensic Composite Investigation",
+            location="Bengaluru Jurisdiction",
+            witness_alias="Active Witness",
+            status="active",
+            render_style="forensic_graphite",
+            case_seed=9204,
+            lead_officer_id=lead_officer_id,
+            current_facial_state=FacialStateJSON().model_dump(),
+        )
+        db.add(case)
+        await db.commit()
+        await db.refresh(case)
 
     officer_id = sketch_req.officer_id or case.lead_officer_id
 
@@ -172,7 +187,22 @@ async def generate_variations(
     case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
     case = case_res.scalar_one_or_none()
     if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
+        lead_officer_id = sketch_req.officer_id or "11111111-1111-1111-1111-111111111111"
+        case = CaseModel(
+            id=case_id,
+            case_number=f"CASE-{case_id.upper()}",
+            title="Forensic Composite Investigation",
+            location="Bengaluru Jurisdiction",
+            witness_alias="Active Witness",
+            status="active",
+            render_style="forensic_graphite",
+            case_seed=9204,
+            lead_officer_id=lead_officer_id,
+            current_facial_state=FacialStateJSON().model_dump(),
+        )
+        db.add(case)
+        await db.commit()
+        await db.refresh(case)
 
     iter_res = await db.execute(
         select(SketchIterationModel).where(
@@ -229,7 +259,22 @@ async def simulate_disguise(
     case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
     case = case_res.scalar_one_or_none()
     if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
+        lead_officer_id = sketch_req.officer_id or "11111111-1111-1111-1111-111111111111"
+        case = CaseModel(
+            id=case_id,
+            case_number=f"CASE-{case_id.upper()}",
+            title="Forensic Composite Investigation",
+            location="Bengaluru Jurisdiction",
+            witness_alias="Active Witness",
+            status="active",
+            render_style="forensic_graphite",
+            case_seed=9204,
+            lead_officer_id=lead_officer_id,
+            current_facial_state=FacialStateJSON().model_dump(),
+        )
+        db.add(case)
+        await db.commit()
+        await db.refresh(case)
 
     iter_res = await db.execute(
         select(SketchIterationModel).where(
@@ -327,7 +372,22 @@ async def export_highres(
     case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
     case = case_res.scalar_one_or_none()
     if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
+        lead_officer_id = sketch_req.officer_id or "11111111-1111-1111-1111-111111111111"
+        case = CaseModel(
+            id=case_id,
+            case_number=f"CASE-{case_id.upper()}",
+            title="Forensic Composite Investigation",
+            location="Bengaluru Jurisdiction",
+            witness_alias="Active Witness",
+            status="active",
+            render_style="forensic_graphite",
+            case_seed=9204,
+            lead_officer_id=lead_officer_id,
+            current_facial_state=FacialStateJSON().model_dump(),
+        )
+        db.add(case)
+        await db.commit()
+        await db.refresh(case)
 
     iter_res = await db.execute(select(SketchIterationModel).where(SketchIterationModel.id == iteration_id))
     iteration = iter_res.scalar_one_or_none()
