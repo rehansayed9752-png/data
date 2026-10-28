@@ -1,16 +1,21 @@
-from pathlib import Path
-from typing import Optional
 import uuid
+from pathlib import Path
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import CaseModel, OfficerModel, SketchIterationModel, get_db
 from models.schemas import (
+    DisguiseResultSchema,
     FacialStateJSON,
     GenerateSketchRequest,
+    GenerateVariationsRequest,
+    SimulateDisguiseRequest,
     SketchIterationSchema,
     UpdateLikenessRequest,
+    VariationResultSchema,
 )
 from services.audit_service import log_audit_event
 from services.facial_state_engine import (
@@ -18,9 +23,10 @@ from services.facial_state_engine import (
     compile_facial_state,
 )
 from services.image_upscaler import export_high_resolution_sketch
-from services.sketch_generator import generate_or_refine_sketch
+from services.sketch_generator import SketchGeneratorService, generate_or_refine_sketch
 
 router = APIRouter(prefix="/cases/{case_id}/sketches", tags=["sketches"])
+
 
 @router.post("/generate", response_model=SketchIterationSchema)
 async def generate_sketch(
@@ -38,12 +44,16 @@ async def generate_sketch(
     officer_id = sketch_req.officer_id or case.lead_officer_id
 
     # Count prior iterations
-    iter_count_query = select(SketchIterationModel).where(SketchIterationModel.case_id == case_id).order_by(SketchIterationModel.iteration_number.desc())
+    iter_count_query = (
+        select(SketchIterationModel)
+        .where(SketchIterationModel.case_id == case_id)
+        .order_by(SketchIterationModel.iteration_number.desc())
+    )
     iter_count_res = await db.execute(iter_count_query)
     all_iterations = iter_count_res.scalars().all()
-    
+
     current_iter_num = len(all_iterations) + 1
-    is_initial = (current_iter_num == 1)
+    is_initial = current_iter_num == 1
 
     # Determine base facial state & previous image
     prev_image_path = None
@@ -51,7 +61,6 @@ async def generate_sketch(
         parent_iter = next((it for it in all_iterations if it.id == sketch_req.parent_iteration_id), None)
         if parent_iter:
             base_state = FacialStateJSON(**parent_iter.facial_state_snapshot)
-            # Find local image path from URL
             filename = Path(parent_iter.image_url).name
             prev_image_path = f"data/sketches/{filename}"
         else:
@@ -71,6 +80,13 @@ async def generate_sketch(
         quick_chips=sketch_req.quick_chips,
         is_initial=is_initial,
     )
+
+    # Safety check
+    if not compilation_result.is_safe_request:
+        raise HTTPException(
+            status_code=400,
+            detail=compilation_result.safety_block_reason or "Safety policy violation: Celebrity or public figure detected.",
+        )
 
     render_style = sketch_req.render_style_override or case.render_style
     full_prompt = build_full_diffusion_prompt(compilation_result.updated_state, render_style)
@@ -127,6 +143,9 @@ async def generate_sketch(
             "iteration_number": current_iter_num,
             "changed_traits": compilation_result.changed_traits,
             "witness_prompt": sketch_req.witness_prompt,
+            "english_translation": compilation_result.english_translation,
+            "xai_explanations": compilation_result.xai_explanations,
+            "contradiction_warning": compilation_result.contradiction_warning,
             "ai_provider_used": provider,
             "latency_ms": latency_ms,
         },
@@ -136,6 +155,128 @@ async def generate_sketch(
 
     return iteration_record
 
+
+@router.post("/{iteration_id}/variations", response_model=List[VariationResultSchema])
+async def generate_variations(
+    case_id: str,
+    iteration_id: str,
+    var_req: GenerateVariationsRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Parallel Multi-Key Variations Generator (USP #3 & #10):
+    Dispatches 3 concurrent requests across separate Google AI Studio keys in the pool.
+    """
+    case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
+    case = case_res.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    iter_res = await db.execute(
+        select(SketchIterationModel).where(
+            SketchIterationModel.id == iteration_id,
+            SketchIterationModel.case_id == case_id,
+        )
+    )
+    iteration = iter_res.scalar_one_or_none()
+    if not iteration:
+        raise HTTPException(status_code=404, detail="Iteration not found")
+
+    local_img_path = f"data/sketches/{Path(iteration.image_url).name}"
+    variations = await SketchGeneratorService.generate_three_variations(
+        case_id=case.id,
+        iteration_number=iteration.iteration_number,
+        case_seed=case.case_seed,
+        base_image_path=local_img_path,
+        uncertain_trait=var_req.uncertain_trait,
+        render_style=case.render_style,
+    )
+
+    officer_id = var_req.officer_id or case.lead_officer_id
+    await log_audit_event(
+        session=db,
+        officer_id=officer_id,
+        action_type="GENERATED_HYPOTHESIS_VARIATIONS",
+        resource_target=f"case:{case.case_number}:iter:{iteration.iteration_number}:variations",
+        case_id=case.id,
+        case_number=case.case_number,
+        details={
+            "uncertain_trait": var_req.uncertain_trait,
+            "variations_count": len(variations),
+            "iteration_id": iteration.id,
+        },
+        ip_address=request.client.host if request.client else "127.0.0.1",
+        user_agent=request.headers.get("user-agent", "ForensicTerminal/1.0"),
+    )
+
+    return variations
+
+
+@router.post("/{iteration_id}/disguise", response_model=DisguiseResultSchema)
+async def simulate_disguise(
+    case_id: str,
+    iteration_id: str,
+    disguise_req: SimulateDisguiseRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Criminal Disguise Simulator (USP #12):
+    Applies non-destructive accessory overlay to composite sketch while locking facial bone structure.
+    """
+    case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
+    case = case_res.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    iter_res = await db.execute(
+        select(SketchIterationModel).where(
+            SketchIterationModel.id == iteration_id,
+            SketchIterationModel.case_id == case_id,
+        )
+    )
+    iteration = iter_res.scalar_one_or_none()
+    if not iteration:
+        raise HTTPException(status_code=404, detail="Iteration not found")
+
+    local_img_path = f"data/sketches/{Path(iteration.image_url).name}"
+    saved_path, provider, latency_ms = await SketchGeneratorService.simulate_disguise(
+        case_id=case.id,
+        iteration_number=iteration.iteration_number,
+        base_image_path=local_img_path,
+        disguise_type=disguise_req.disguise_type,
+        render_style=case.render_style,
+    )
+
+    web_url = f"/static/sketches/{Path(saved_path).name}"
+    officer_id = disguise_req.officer_id or case.lead_officer_id
+
+    await log_audit_event(
+        session=db,
+        officer_id=officer_id,
+        action_type="SIMULATED_CRIMINAL_DISGUISE",
+        resource_target=f"case:{case.case_number}:iter:{iteration.iteration_number}:disguise:{disguise_req.disguise_type}",
+        case_id=case.id,
+        case_number=case.case_number,
+        details={
+            "disguise_type": disguise_req.disguise_type,
+            "iteration_id": iteration.id,
+            "provider": provider,
+            "latency_ms": latency_ms,
+        },
+        ip_address=request.client.host if request.client else "127.0.0.1",
+        user_agent=request.headers.get("user-agent", "ForensicTerminal/1.0"),
+    )
+
+    return DisguiseResultSchema(
+        disguise_type=disguise_req.disguise_type,
+        image_url=web_url,
+        ai_provider_used=provider,
+        generation_latency_ms=latency_ms,
+    )
+
+
 @router.post("/{iteration_id}/likeness", response_model=SketchIterationSchema)
 async def update_likeness(
     case_id: str,
@@ -144,7 +285,10 @@ async def update_likeness(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    iter_query = select(SketchIterationModel).where(SketchIterationModel.id == iteration_id, SketchIterationModel.case_id == case_id)
+    iter_query = select(SketchIterationModel).where(
+        SketchIterationModel.id == iteration_id,
+        SketchIterationModel.case_id == case_id,
+    )
     iter_res = await db.execute(iter_query)
     iteration = iter_res.scalar_one_or_none()
     if not iteration:
@@ -170,6 +314,7 @@ async def update_likeness(
     )
     return iteration
 
+
 @router.post("/{iteration_id}/export-highres")
 async def export_highres(
     case_id: str,
@@ -194,8 +339,7 @@ async def export_highres(
     officer_badge = officer.badge_number if officer else "KA-4091"
 
     local_img_path = f"data/sketches/{Path(iteration.image_url).name}"
-    
-    # Audit log entry for high res export
+
     audit_entry = await log_audit_event(
         session=db,
         officer_id=active_officer_id,

@@ -25,12 +25,59 @@ class StateCompilationResult(BaseModel):
     updated_state: FacialStateJSON
     changed_traits: List[str] = Field(
         default_factory=list,
-        description="List of anatomical keys modified in this turn, e.g. ['jawline_chin', 'eyes']"
+        description="List of anatomical keys modified in this turn, e.g. ['jawline_chin', 'eyes']",
     )
     delta_edit_instruction: str = Field(
         default="",
-        description="Concise imperative instruction for the image editor describing only what to change while locking all other traits"
+        description="Concise imperative instruction for the image editor describing only what to change while locking all other traits",
     )
+    english_translation: Optional[str] = Field(
+        default=None,
+        description="English translation of regional witness input (Kannada, Hindi, Marathi, etc.)",
+    )
+    xai_explanations: List[str] = Field(
+        default_factory=list,
+        description="Quantitative Explainable AI delta badges, e.g. ['Eyebrow Density +35%', 'Jawline Taper +20%']",
+    )
+    contradiction_warning: Optional[str] = Field(
+        default=None,
+        description="Warning if statement contains logical/biological contradictions (e.g. age 18 with full white aged beard)",
+    )
+    is_safe_request: bool = Field(
+        default=True,
+        description="Whether the request is safe and free of celebrity/public figure generation attempts",
+    )
+    safety_block_reason: Optional[str] = Field(
+        default=None,
+        description="Explanation if the request was flagged as unsafe (e.g. celebrity name blocked)",
+    )
+
+class SimulateDisguiseRequest(BaseModel):
+    disguise_type: str = Field(
+        default="cap",
+        description="One of 'cap', 'sunglasses', 'beard', 'hoodie'",
+    )
+    officer_id: Optional[str] = None
+
+class DisguiseResultSchema(BaseModel):
+    disguise_type: str
+    image_url: str
+    ai_provider_used: str
+    generation_latency_ms: int
+
+class GenerateVariationsRequest(BaseModel):
+    uncertain_trait: str = Field(
+        default="jawline_chin",
+        description="Feature category where witness is uncertain, e.g. 'jawline_chin', 'eyes', 'nose'",
+    )
+    officer_id: Optional[str] = None
+
+class VariationResultSchema(BaseModel):
+    label: str  # "A", "B", "C"
+    description: str
+    image_url: str
+    ai_provider_used: str
+    generation_latency_ms: int
 
 class OfficerSchema(BaseModel):
     id: str
