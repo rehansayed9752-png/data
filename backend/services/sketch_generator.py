@@ -147,8 +147,8 @@ class SketchGeneratorService:
         try:
             encoded_prompt = urllib.parse.quote(full_compiled_prompt)
             url = (
-                f"https://gen.pollinations.ai/image/{encoded_prompt}"
-                f"?model=flux&seed={case_seed}&width=1024&height=1024&nologo=true"
+                f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+                f"?seed={case_seed}&width=1024&height=1024&nologo=true"
             )
             async with httpx.AsyncClient(timeout=35.0, follow_redirects=True) as http_client:
                 resp = await http_client.get(url)
