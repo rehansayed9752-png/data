@@ -390,7 +390,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                     <span className="text-ink-faint">AI Cluster:</span>
                     <span className="text-accent flex items-center space-x-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse inline-block"></span>
-                      <span>4x Gemini Pool Active</span>
+                      <span>2x Gemini + Cloudflare Active</span>
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -403,7 +403,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-ink-faint">Engine:</span>
-                    <span className="text-ink-body">gemini-2.5-flash-image</span>
+                    <span className="text-ink-body">Cloudflare Flux-1 Schnell</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-ink-faint">Custody Chain:</span>

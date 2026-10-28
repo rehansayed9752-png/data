@@ -70,9 +70,14 @@ class Settings(BaseSettings):
     # Database: defaults to local SQLite if DATABASE_URL is not set
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./forensic_local.db")
 
-    # Multi-Key Gemini Rotation Configuration
+    # Cloudflare Worker for Free Sketch Generation
+    CF_WORKER_URL: str = os.getenv("CF_WORKER_URL", "https://still-limit-6003.amasivarad.workers.dev/")
+    CF_WORKER_API_KEY: str = os.getenv("CF_WORKER_API_KEY", "")
+    CF_IMAGE_MODEL: str = os.getenv("CF_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell")
+
+    # Multi-Key Gemini Rotation Configuration (Text Reasoning, 14-Region JSON & Translation)
     GEMINI_IMAGE_MODEL: str = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
-    GEMINI_TEXT_MODEL: str = os.getenv("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
+    GEMINI_TEXT_MODEL: str = os.getenv("GEMINI_TEXT_MODEL", "gemini-2.8-flash")
     KEY_COOLDOWN_SECONDS: int = int(os.getenv("KEY_COOLDOWN_SECONDS", "60"))
 
     # Paths

@@ -51,6 +51,7 @@ async def log_audit_event(
     last_log_res = await session.execute(last_log_stmt)
     last_log = last_log_res.scalar_one_or_none()
     prev_hash = last_log.row_hash if last_log else GENESIS_HASH
+    next_seq = (last_log.seq_id + 1) if (last_log and last_log.seq_id is not None) else 1
 
     row_hash = compute_audit_hash(
         prev_hash=prev_hash,
@@ -62,6 +63,7 @@ async def log_audit_event(
     )
 
     audit_entry = AccessAuditLogModel(
+        seq_id=next_seq,
         officer_id=officer_id,
         badge_number=badge_number,
         officer_name=officer_name,

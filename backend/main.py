@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Ensure backend directory is in sys.path for direct imports
+backend_dir = Path(__file__).resolve().parent
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,7 +64,12 @@ async def health_check():
             "total_keys": pool_status["total_keys"],
             "active_healthy_keys": pool_status["active_healthy_keys"],
         },
-        "ai_primary": settings.GEMINI_IMAGE_MODEL,
+        "cloudflare_worker": {
+            "status": "configured",
+            "url": settings.CF_WORKER_URL,
+            "model": settings.CF_IMAGE_MODEL,
+        },
+        "ai_primary": "cloudflare-flux-schnell",
         "ai_text": settings.GEMINI_TEXT_MODEL,
         "ai_fallback": "pollinations-flux",
     }

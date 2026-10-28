@@ -33,3 +33,4 @@ data/sketches/
 data/mugshots/
 *.sqlite3
 *.db
+backend/data/
