@@ -5,7 +5,9 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from db.database import init_db
-from routers import audit, cases, officers, sketches
+from routers import audit, cases, officers, sketches, system
+from services.gemini_key_pool import key_pool
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -13,9 +15,10 @@ async def lifespan(app: FastAPI):
     await init_db()
     yield
 
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="Digital Forensic Composite Sketch Studio with Identity Locking & Cryptographic Audit Chain",
+    description="Digital Forensic Composite Sketch Studio with Multi-Key Gemini Rotation, Identity Locking & Cryptographic Audit Chain",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -38,13 +41,22 @@ app.include_router(officers.router, prefix=settings.API_V1_STR)
 app.include_router(cases.router, prefix=settings.API_V1_STR)
 app.include_router(sketches.router, prefix=settings.API_V1_STR)
 app.include_router(audit.router, prefix=settings.API_V1_STR)
+app.include_router(system.router, prefix=settings.API_V1_STR)
+
 
 @app.get("/health")
 async def health_check():
+    pool_status = key_pool.get_pool_status()
     return {
         "status": "healthy",
         "service": settings.PROJECT_NAME,
         "database": "connected",
-        "ai_primary": "gemini-2.5-flash-image",
+        "gemini_cluster": {
+            "status": pool_status["cluster_status"],
+            "total_keys": pool_status["total_keys"],
+            "active_healthy_keys": pool_status["active_healthy_keys"],
+        },
+        "ai_primary": settings.GEMINI_IMAGE_MODEL,
+        "ai_text": settings.GEMINI_TEXT_MODEL,
         "ai_fallback": "pollinations-flux",
     }
