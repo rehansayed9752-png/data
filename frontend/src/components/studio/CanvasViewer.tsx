@@ -1,25 +1,25 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sliders,
   ZoomIn,
   ZoomOut,
-  RotateCcw,
   Eye,
-  Shield,
-  Layers,
-  Sparkles,
   Info,
-  Maximize2,
-  AlertCircle,
-  FileCheck,
   Check,
   Glasses,
-  Scissors,
-  HelpCircle,
+  RotateCcw,
+  Sparkles,
 } from 'lucide-react';
-import { SketchIteration, FacialStateJSON, RenderStyle, DisguiseOption } from '../../types/forensic';
+import {
+  SketchIteration,
+  FacialStateJSON,
+  RenderStyle,
+  DisguiseOption,
+} from '../../types/forensic';
 import { DISGUISE_OPTIONS } from '../../data/mockForensicData';
 import { generateForensicSketchDataUrl } from '../../utils/proceduralSketch';
+import { buttonHoverLift, crossFade400 } from '../../styles/tokens';
 
 interface CanvasViewerProps {
   currentIteration: SketchIteration;
@@ -27,6 +27,12 @@ interface CanvasViewerProps {
   renderStyle: RenderStyle;
   onUpdateLikeness: (score: number) => void;
   onSelectVariation: (variationIteration: SketchIteration) => void;
+  externalToolTrigger?: {
+    tabMode?: 'canvas' | 'variations';
+    isCompareMode?: boolean;
+    showInspector?: boolean;
+    showDisguises?: boolean;
+  };
 }
 
 export const CanvasViewer: React.FC<CanvasViewerProps> = ({
@@ -35,18 +41,41 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
   renderStyle,
   onUpdateLikeness,
   onSelectVariation,
+  externalToolTrigger,
 }) => {
-  const [sliderPosition, setSliderPosition] = useState(50); // percentage 0-100
+  const [sliderPosition, setSliderPosition] = useState(50);
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [showInspector, setShowInspector] = useState(false);
   const [showDisguises, setShowDisguises] = useState(false);
   const [activeDisguise, setActiveDisguise] = useState<DisguiseOption | null>(null);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [likenessInput, setLikenessInput] = useState(currentIteration.witness_likeness_score);
-  const [showLandmarks, setShowLandmarks] = useState(true);
+  const [showLandmarks, setShowLandmarks] = useState(false);
+  const [activeTabMode, setActiveTabMode] = useState<'canvas' | 'variations'>('canvas');
 
-  // Variations A, B, C based on current iteration with subtle surgical alterations
-  const [variationsList, setVariationsList] = useState<SketchIteration[]>(() => {
+  // Auto-hide floating toolbar state
+  const [isToolbarVisible, setIsToolbarVisible] = useState(true);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetToolbarTimer = () => {
+    setIsToolbarVisible(true);
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+    }
+    hideTimerRef.current = setTimeout(() => {
+      setIsToolbarVisible(false);
+    }, 2000);
+  };
+
+  useEffect(() => {
+    resetToolbarTimer();
+    return () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, []);
+
+  // Variations list A, B, C
+  const [variationsList] = useState<SketchIteration[]>(() => {
     const varA: SketchIteration = {
       ...currentIteration,
       id: `${currentIteration.id}-varA`,
@@ -54,7 +83,7 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
       is_variation: true,
       facial_state: {
         ...currentIteration.facial_state,
-        jawline_chin: 'Angular jawline with prominent squarer mandibular angle',
+        jawline_chin: 'Angular jawline with squarer mandibular angle',
       },
       image_url: generateForensicSketchDataUrl(
         { ...currentIteration.facial_state, jawline_chin: 'Angular square jawline' },
@@ -71,7 +100,7 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
       is_variation: true,
       facial_state: {
         ...currentIteration.facial_state,
-        eyes: 'Slightly wider hooded almond eyes with subtle periorbital asymmetry',
+        eyes: 'Slightly wider hooded almond eyes with subtle asymmetry',
       },
       image_url: generateForensicSketchDataUrl(
         { ...currentIteration.facial_state, eyes: 'Hooded almond eyes' },
@@ -88,7 +117,7 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
       is_variation: true,
       facial_state: {
         ...currentIteration.facial_state,
-        nose: 'Narrower aquiline bridge with subtle fracture deviation',
+        nose: 'Narrower aquiline bridge with subtle deviation',
       },
       image_url: generateForensicSketchDataUrl(
         { ...currentIteration.facial_state, nose: 'Narrow aquiline bridge' },
@@ -101,11 +130,9 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
     return [varA, varB, varC];
   });
 
-  const [activeTabMode, setActiveTabMode] = useState<'canvas' | 'variations'>('canvas');
-
-  // Handle dragging the split slider
   const containerRef = useRef<HTMLDivElement>(null);
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    resetToolbarTimer();
     if (!isCompareMode || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
@@ -118,10 +145,9 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
     onUpdateLikeness(newVal);
   };
 
-  // Helper for disguise modified image URL
   const getDisguisedImageUrl = () => {
     if (!activeDisguise) return currentIteration.image_url;
-    let modifiedState = { ...currentIteration.facial_state };
+    const modifiedState = { ...currentIteration.facial_state };
 
     if (activeDisguise.id === 'disguise-cap') {
       modifiedState.hair_style_texture = 'Occluded by dark tactical beanie pulled low over forehead';
@@ -137,207 +163,230 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
     return generateForensicSketchDataUrl(modifiedState, renderStyle, 999121, currentIteration.iteration_number);
   };
 
-  const activeDisplayImage = activeDisguise ? getDisguisedImageUrl() : currentIteration.image_url;
+  useEffect(() => {
+    if (externalToolTrigger?.tabMode !== undefined) {
+      setActiveTabMode(externalToolTrigger.tabMode);
+    }
+    if (externalToolTrigger?.isCompareMode !== undefined) {
+      setIsCompareMode(externalToolTrigger.isCompareMode);
+    }
+    if (externalToolTrigger?.showInspector !== undefined) {
+      setShowInspector(externalToolTrigger.showInspector);
+    }
+    if (externalToolTrigger?.showDisguises !== undefined) {
+      setShowDisguises(externalToolTrigger.showDisguises);
+    }
+  }, [externalToolTrigger]);
+
+  const activeDisplayImage = activeDisguise
+    ? getDisguisedImageUrl()
+    : generateForensicSketchDataUrl(
+        currentIteration.facial_state,
+        renderStyle,
+        849204,
+        currentIteration.iteration_number
+      );
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0c12] border border-white/[0.08] rounded-xl overflow-hidden relative">
-      {/* Top Controls Toolbar */}
-      <div className="p-2.5 bg-[#0e111a] border-b border-white/[0.07] flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center space-x-2">
-          {/* View mode toggle: Single vs Variations */}
-          <div className="flex items-center bg-[#141824] border border-white/[0.08] rounded p-0.5 text-xs font-mono">
+    <div
+      className="flex flex-col h-full bg-surface-card border border-line-subtle rounded-xl overflow-hidden relative font-sans"
+      onMouseMove={resetToolbarTimer}
+      onMouseEnter={resetToolbarTimer}
+    >
+      {/* Top Header / Mode Bar with Animated Pill Glider */}
+      <div className="p-3 bg-surface-base border-b border-line-subtle flex items-center justify-between gap-3 flex-wrap">
+        {/* Animated Tabs */}
+        <div className="flex items-center p-0.5 rounded-lg bg-surface-card border border-line-subtle text-xs">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTabMode('canvas');
+              setIsCompareMode(false);
+              setActiveDisguise(null);
+            }}
+            className={`relative px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              activeTabMode === 'canvas' && !isCompareMode
+                ? 'text-ink-heading'
+                : 'text-ink-muted hover:text-ink-body'
+            }`}
+          >
+            {activeTabMode === 'canvas' && !isCompareMode && (
+              <motion.div
+                layoutId="activeCanvasTab"
+                className="absolute inset-0 bg-surface-elevated rounded-md border border-line-medium shadow-xs"
+                transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+              />
+            )}
+            <span className="relative z-10">Composite</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTabMode('variations');
+              setIsCompareMode(false);
+              setActiveDisguise(null);
+            }}
+            className={`relative px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              activeTabMode === 'variations'
+                ? 'text-ink-heading'
+                : 'text-ink-muted hover:text-ink-body'
+            }`}
+          >
+            {activeTabMode === 'variations' && (
+              <motion.div
+                layoutId="activeCanvasTab"
+                className="absolute inset-0 bg-surface-elevated rounded-md border border-line-medium shadow-xs"
+                transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+              />
+            )}
+            <span className="relative z-10">Variations (A/B/C)</span>
+          </button>
+
+          {previousIteration && (
             <button
+              type="button"
               onClick={() => {
                 setActiveTabMode('canvas');
-                setActiveDisguise(null);
+                setIsCompareMode(true);
               }}
-              className={`px-2 py-1 rounded transition-colors ${
-                activeTabMode === 'canvas'
-                  ? 'bg-zinc-800 text-amber-300 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              Primary Composite
-            </button>
-            <button
-              onClick={() => setActiveTabMode('variations')}
-              className={`px-2 py-1 rounded transition-colors ${
-                activeTabMode === 'variations'
-                  ? 'bg-zinc-800 text-amber-300 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              Variations (A/B/C)
-            </button>
-          </div>
-
-          {/* Before / After comparison toggle (only when prev iteration exists) */}
-          {previousIteration && activeTabMode === 'canvas' && (
-            <button
-              onClick={() => setIsCompareMode(!isCompareMode)}
-              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-medium border transition-all ${
+              className={`relative px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                 isCompareMode
-                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
-                  : 'bg-[#141824] text-zinc-400 hover:text-zinc-200 border-white/[0.08]'
+                  ? 'text-ink-heading'
+                  : 'text-ink-muted hover:text-ink-body'
               }`}
-              title="Split comparison slider: Iteration N-1 vs Iteration N"
             >
-              <Sliders className="w-3.5 h-3.5" />
-              <span>Split Comparison</span>
+              {isCompareMode && (
+                <motion.div
+                  layoutId="activeCanvasTab"
+                  className="absolute inset-0 bg-surface-elevated rounded-md border border-line-medium shadow-xs"
+                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                />
+              )}
+              <span className="relative z-10">Split Comparison</span>
             </button>
           )}
-
-          {/* Disguise Simulator Button */}
-          <button
-            onClick={() => setShowDisguises(!showDisguises)}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-medium border transition-all ${
-              showDisguises || activeDisguise
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                : 'bg-[#141824] text-zinc-400 hover:text-zinc-200 border-white/[0.08]'
-            }`}
-            title="Open Disguise & Exploration Simulator"
-          >
-            <Glasses className="w-3.5 h-3.5" />
-            <span>Disguise Modeler</span>
-          </button>
         </div>
 
-        {/* Right side toolbar tools: Zoom, Landmarks, Inspector */}
-        <div className="flex items-center space-x-1.5">
+        {/* Action Toggles */}
+        <div className="flex items-center space-x-2">
           <button
-            onClick={() => setZoomLevel(prev => Math.max(70, prev - 15))}
-            className="p-1.5 rounded bg-[#141824] hover:bg-white/[0.05] border border-white/[0.07] text-zinc-400 hover:text-zinc-200"
-            title="Zoom out"
-          >
-            <ZoomOut className="w-3.5 h-3.5" />
-          </button>
-          <span className="text-[11px] font-mono text-zinc-400 px-1">
-            {zoomLevel}%
-          </span>
-          <button
-            onClick={() => setZoomLevel(prev => Math.min(160, prev + 15))}
-            className="p-1.5 rounded bg-[#141824] hover:bg-white/[0.05] border border-white/[0.07] text-zinc-400 hover:text-zinc-200"
-            title="Zoom in"
-          >
-            <ZoomIn className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            onClick={() => setShowLandmarks(!showLandmarks)}
-            className={`p-1.5 rounded border transition-colors ${
-              showLandmarks
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                : 'bg-[#141824] text-zinc-400 border-white/[0.07]'
+            type="button"
+            onClick={() => setShowDisguises(!showDisguises)}
+            className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs transition-colors border ${
+              showDisguises || activeDisguise
+                ? 'bg-accent/15 text-accent border-accent/40 font-medium'
+                : 'bg-surface-card hover:bg-surface-elevated text-ink-muted hover:text-ink-body border-line-subtle'
             }`}
-            title="Toggle anatomical calibration grid and reticles"
           >
-            <Eye className="w-3.5 h-3.5" />
+            <Glasses className="w-3.5 h-3.5" strokeWidth={1.5} />
+            <span>Disguise Modeler</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setShowInspector(!showInspector)}
-            className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+            className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs transition-colors border ${
               showInspector
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                : 'bg-[#141824] text-zinc-400 hover:text-zinc-200 border-white/[0.07]'
+                ? 'bg-surface-elevated text-ink-heading border-line-medium font-medium'
+                : 'bg-surface-card hover:bg-surface-elevated text-ink-muted hover:text-ink-body border-line-subtle'
             }`}
-            title="Inspect 14-Point FacialStateJSON"
           >
-            <Info className="w-3.5 h-3.5" />
+            <Info className="w-3.5 h-3.5" strokeWidth={1.5} />
             <span className="hidden sm:inline">14-Point Anatomy</span>
           </button>
         </div>
       </div>
 
-      {/* Disguise Simulation Active Banner */}
+      {/* Disguise Modeler simulation pill */}
       {activeDisguise && (
-        <div className="bg-amber-950/60 border-b border-amber-500/40 px-3 py-1.5 flex items-center justify-between text-xs text-amber-200">
+        <div className="bg-surface-elevated border-b border-line-subtle px-4 py-2 flex items-center justify-between text-xs">
           <div className="flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-            <span className="font-mono uppercase font-bold tracking-wider text-[11px] text-amber-300">
-              SIMULATION ACTIVE: {activeDisguise.name}
+            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span>
+            <span className="text-ink-heading font-medium">
+              Simulation: {activeDisguise.name}
             </span>
-            <span className="text-[10px] text-amber-400/80 hidden md:inline">
-              [NOT WITNESS RECORD • NON-EVIDENTIARY]
+            <span className="text-ink-faint text-[11px] hidden md:inline">
+              (Non-evidentiary exploration)
             </span>
           </div>
           <button
+            type="button"
             onClick={() => setActiveDisguise(null)}
-            className="text-[11px] font-mono text-zinc-300 hover:text-white bg-black/40 px-2 py-0.5 rounded border border-white/[0.1]"
+            className="text-[11px] text-ink-muted hover:text-ink-heading bg-surface-card hover:bg-surface-base px-2 py-0.5 rounded border border-line-subtle transition-colors"
           >
-            Reset to Original
+            Reset
           </button>
         </div>
       )}
 
-      {/* Disguise Options Drawer */}
-      {showDisguises && (
-        <div className="p-3 bg-[#0d1017] border-b border-white/[0.08] animate-fadeIn">
-          <div className="text-[10px] font-mono uppercase text-amber-400 tracking-wider font-semibold mb-2 flex items-center space-x-1.5">
-            <Glasses className="w-3 h-3" />
-            <span>Forensic Disguise Modeler (Phase 7 Non-Evidentiary Simulation)</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {DISGUISE_OPTIONS.map(disguise => (
-              <button
-                key={disguise.id}
-                onClick={() => {
-                  setActiveDisguise(activeDisguise?.id === disguise.id ? null : disguise);
-                }}
-                className={`p-2 rounded text-left border transition-all ${
-                  activeDisguise?.id === disguise.id
-                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-200'
-                    : 'bg-[#141824] border-white/[0.08] text-zinc-300 hover:bg-white/[0.04]'
-                }`}
-              >
-                <div className="text-xs font-semibold leading-tight mb-1 flex items-center justify-between">
-                  <span>{disguise.name}</span>
-                  {activeDisguise?.id === disguise.id && (
-                    <Check className="w-3.5 h-3.5 text-amber-400" />
-                  )}
-                </div>
-                <div className="text-[10px] text-zinc-400 line-clamp-2 leading-relaxed">
-                  {disguise.effectDescription}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Disguise Selection Drawer */}
+      <AnimatePresence>
+        {showDisguises && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="p-3 bg-surface-base border-b border-line-subtle overflow-hidden"
+          >
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {DISGUISE_OPTIONS.map(disguise => {
+                const isSelected = activeDisguise?.id === disguise.id;
+                return (
+                  <button
+                    key={disguise.id}
+                    type="button"
+                    onClick={() => setActiveDisguise(isSelected ? null : disguise)}
+                    className={`p-2.5 rounded-lg text-left border transition-all ${
+                      isSelected
+                        ? 'bg-surface-elevated border-accent/50 text-ink-heading'
+                        : 'bg-surface-card border-line-subtle text-ink-muted hover:text-ink-body hover:bg-surface-elevated/50'
+                    }`}
+                  >
+                    <div className="text-xs font-medium mb-1 flex items-center justify-between">
+                      <span>{disguise.name}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-accent" strokeWidth={2} />}
+                    </div>
+                    <div className="text-[11px] text-ink-faint line-clamp-2 leading-relaxed">
+                      {disguise.effectDescription}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Main Canvas Area */}
-      <div className="flex-1 relative overflow-hidden bg-[#07080c] flex items-center justify-center">
+      {/* Main Viewport */}
+      <div className="flex-1 relative overflow-hidden bg-surface-base flex items-center justify-center p-4">
+        {/* Subtle Corner Marks */}
+        <div className="absolute top-4 left-4 w-4 h-4 border-t border-l border-line-medium pointer-events-none"></div>
+        <div className="absolute top-4 right-4 w-4 h-4 border-t border-r border-line-medium pointer-events-none"></div>
+        <div className="absolute bottom-4 left-4 w-4 h-4 border-b border-l border-line-medium pointer-events-none"></div>
+        <div className="absolute bottom-4 right-4 w-4 h-4 border-b border-r border-line-medium pointer-events-none"></div>
+
         {activeTabMode === 'canvas' ? (
           <div
             ref={containerRef}
             onMouseMove={handleMouseMove}
-            className="w-full h-full relative select-none flex items-center justify-center p-4"
+            className="w-full h-full relative select-none flex items-center justify-center"
           >
-            {/* Calibration Corner Reticles */}
-            {showLandmarks && (
-              <>
-                <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-amber-500/40 pointer-events-none"></div>
-                <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-amber-500/40 pointer-events-none"></div>
-                <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-amber-500/40 pointer-events-none"></div>
-                <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-amber-500/40 pointer-events-none"></div>
-              </>
-            )}
-
-            {/* If Before / After Compare Slider Mode is Active */}
+            {/* Split Comparison Mode */}
             {isCompareMode && previousIteration ? (
-              <div className="relative w-full max-w-[480px] aspect-[400/480] border border-white/[0.12] rounded-lg overflow-hidden shadow-2xl">
-                {/* Before Image (Left / Background) */}
+              <div className="relative w-full max-w-[460px] aspect-[400/480] border border-line-medium rounded-lg overflow-hidden shadow-lg bg-surface-card">
+                {/* Before Image */}
                 <img
                   src={previousIteration.image_url}
                   alt={`Iteration #${previousIteration.iteration_number}`}
                   className="absolute inset-0 w-full h-full object-contain pointer-events-none"
                   style={{ transform: `scale(${zoomLevel / 100})` }}
                 />
-                <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/75 border border-white/[0.1] rounded text-[10px] font-mono text-zinc-300">
-                  BEFORE: Iteration #{previousIteration.iteration_number}
+                <div className="absolute top-2.5 left-2.5 px-2 py-0.5 bg-surface-base/80 backdrop-blur-xs border border-line-subtle rounded text-[10px] font-mono text-ink-muted">
+                  Prior #{previousIteration.iteration_number}
                 </div>
 
-                {/* After Image (Right / Clipped by slider) */}
+                {/* After Image */}
                 <div
                   className="absolute inset-0 overflow-hidden"
                   style={{ width: `${sliderPosition}%` }}
@@ -347,87 +396,86 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
                     alt={`Iteration #${currentIteration.iteration_number}`}
                     className="absolute inset-0 w-full h-full object-contain pointer-events-none max-w-none"
                     style={{
-                      width: `${containerRef.current?.clientWidth || 480}px`,
+                      width: `${containerRef.current?.clientWidth || 460}px`,
                       height: '100%',
                       transform: `scale(${zoomLevel / 100})`,
                     }}
                   />
-                  <div className="absolute top-2 left-2 px-2 py-0.5 bg-amber-500/80 text-black font-bold rounded text-[10px] font-mono">
-                    AFTER: Iteration #{currentIteration.iteration_number}
+                  <div className="absolute top-2.5 left-2.5 px-2 py-0.5 bg-accent text-surface-base font-semibold rounded text-[10px] font-mono">
+                    Current #{currentIteration.iteration_number}
                   </div>
                 </div>
 
-                {/* Vertical Divider Hairline */}
+                {/* Hairline Divider */}
                 <div
-                  className="absolute top-0 bottom-0 w-[2px] bg-amber-400 shadow-[0_0_10px_rgba(212,175,55,0.8)] cursor-ew-resize flex items-center justify-center pointer-events-none"
+                  className="absolute top-0 bottom-0 w-[1px] bg-accent/80 cursor-ew-resize flex items-center justify-center pointer-events-none"
                   style={{ left: `${sliderPosition}%` }}
                 >
-                  <div className="w-5 h-5 rounded-full bg-amber-400 text-black text-[10px] font-bold flex items-center justify-center shadow-lg border border-black">
+                  <div className="w-5 h-5 rounded-full bg-surface-card text-accent text-[10px] flex items-center justify-center border border-accent/40 shadow-sm">
                     ⇆
                   </div>
                 </div>
               </div>
             ) : (
-              /* Single View Composite Canvas */
+              /* Single View Composite with 400ms cross-fade */
               <div
-                className="relative max-w-[500px] w-full aspect-[400/480] rounded-lg border border-white/[0.1] overflow-hidden shadow-2xl bg-[#090b10] flex items-center justify-center transition-transform"
-                style={{ transform: `scale(${zoomLevel / 100})` }}
+                className="relative max-w-[480px] w-full aspect-[400/480] rounded-lg border border-line-subtle overflow-hidden shadow-lg bg-surface-card flex items-center justify-center"
+                style={{ transform: `scale(${zoomLevel / 100})`, transition: 'transform 0.15s ease-out' }}
               >
-                <img
-                  src={activeDisplayImage}
-                  alt={`Forensic Sketch Iteration #${currentIteration.iteration_number}`}
-                  className="w-full h-full object-contain"
-                />
+                <AnimatePresence mode="wait">
+                  <motion.img
+                    key={activeDisplayImage}
+                    src={activeDisplayImage}
+                    alt={`Forensic Sketch Iteration #${currentIteration.iteration_number}`}
+                    variants={crossFade400}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                    className="w-full h-full object-contain"
+                  />
+                </AnimatePresence>
 
-                {/* Evidentiary watermark banner on preview */}
-                <div className="absolute bottom-2 left-2 right-2 px-2.5 py-1 bg-black/80 backdrop-blur border border-white/[0.08] rounded flex items-center justify-between text-[9.5px] font-mono text-zinc-400">
+                {/* Quiet evidentiary metadata strip */}
+                <div className="absolute bottom-2.5 left-2.5 right-2.5 px-2.5 py-1 bg-surface-base/85 backdrop-blur-xs border border-line-subtle rounded-md flex items-center justify-between text-[10px] font-mono text-ink-muted">
                   <div className="flex items-center space-x-2">
-                    <span className="text-amber-400 font-bold">
-                      ITER #{currentIteration.iteration_number}
+                    <span className="text-ink-heading font-medium">
+                      Iter #{currentIteration.iteration_number}
                     </span>
                     <span>•</span>
-                    <span>LATENCY: {currentIteration.latency_ms}ms</span>
+                    <span>{currentIteration.latency_ms}ms</span>
                     <span>•</span>
-                    <span className="text-cyan-400">{currentIteration.ai_provider}</span>
+                    <span>{currentIteration.ai_provider}</span>
                   </div>
-                  <div className="text-zinc-500">
-                    2048x2048 RES READY
+                  <div className="text-ink-faint">
+                    2048 × 2048 px
                   </div>
                 </div>
-
-                {/* Disguise watermark overlay if active */}
-                {activeDisguise && (
-                  <div className="absolute top-4 left-0 right-0 py-1 bg-red-600/80 text-white text-[10px] font-mono font-bold tracking-widest text-center uppercase pointer-events-none transform -rotate-3 shadow-lg">
-                    *** SIMULATION ONLY — NOT EYEWITNESS EVIDENCE ***
-                  </div>
-                )}
               </div>
             )}
           </div>
         ) : (
-          /* Variations Matrix View (Phase 5) */
+          /* Variations Matrix */
           <div className="w-full h-full p-4 overflow-y-auto">
             <div className="max-w-4xl mx-auto">
-              <div className="mb-3">
-                <h3 className="text-sm font-semibold text-zinc-100 flex items-center space-x-2">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <span>Ambiguity Variations: Choose Alternative Hypothesis</span>
+              <div className="mb-4">
+                <h3 className="font-serif font-semibold text-base text-ink-heading mb-1">
+                  Ambiguity Variations
                 </h3>
-                <p className="text-xs text-zinc-400">
-                  Derived from ambiguous witness memory. Selecting a variation sets it as the active branch without deleting alternatives.
+                <p className="text-xs text-ink-muted">
+                  Alternative interpretations derived from witness uncertainty. Selecting a branch sets it as active without erasing history.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 {variationsList.map(v => (
                   <div
                     key={v.id}
-                    className="p-3 bg-[#111520] border border-white/[0.09] hover:border-amber-500/40 rounded-lg flex flex-col justify-between transition-all"
+                    className="p-3.5 bg-surface-card border border-line-subtle hover:border-line-medium rounded-xl flex flex-col justify-between transition-all shadow-xs"
                   >
                     <div>
-                      <div className="flex items-center justify-between text-xs font-mono font-bold text-amber-400 mb-2">
+                      <div className="flex items-center justify-between text-xs font-mono font-medium text-accent mb-2">
                         <span>VARIATION {v.variation_label}</span>
-                        <span className="text-[10px] text-zinc-400 font-normal">
+                        <span className="text-[10.5px] text-ink-muted font-normal">
                           {v.variation_label === 'A'
                             ? 'Squarer Mandible'
                             : v.variation_label === 'B'
@@ -435,25 +483,26 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
                             : 'Narrow Aquiline Bridge'}
                         </span>
                       </div>
-                      <div className="aspect-[400/480] bg-black rounded border border-white/[0.06] overflow-hidden mb-2">
+                      <div className="aspect-[400/480] bg-surface-base rounded-md border border-line-subtle overflow-hidden mb-2.5">
                         <img
                           src={v.image_url}
                           alt={`Variation ${v.variation_label}`}
                           className="w-full h-full object-contain"
                         />
                       </div>
-                      <div className="text-[11px] text-zinc-300 mb-3 line-clamp-2">
+                      <p className="text-xs text-ink-muted mb-3 line-clamp-2 leading-relaxed">
                         {v.variation_label === 'A'
                           ? v.facial_state.jawline_chin
                           : v.variation_label === 'B'
                           ? v.facial_state.eyes
                           : v.facial_state.nose}
-                      </div>
+                      </p>
                     </div>
 
                     <button
+                      type="button"
                       onClick={() => onSelectVariation(v)}
-                      className="w-full py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-medium transition-colors"
+                      className="w-full py-1.5 rounded-md bg-surface-elevated hover:bg-accent hover:text-surface-base border border-line-medium text-ink-body text-xs font-medium transition-colors"
                     >
                       Branch from Variation {v.variation_label}
                     </button>
@@ -464,60 +513,115 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
           </div>
         )}
 
-        {/* 14-Point Anatomical Feature State Inspector Drawer */}
-        {showInspector && (
-          <div className="absolute right-0 top-0 bottom-0 w-80 bg-[#0d1017]/95 backdrop-blur-md border-l border-white/[0.1] p-3 overflow-y-auto z-40 animate-slideLeft shadow-2xl">
-            <div className="flex items-center justify-between pb-2 mb-3 border-b border-white/[0.08]">
-              <div className="flex items-center space-x-1.5 text-xs font-semibold text-amber-400">
-                <Info className="w-3.5 h-3.5" />
-                <span>14-Point FacialStateJSON</span>
-              </div>
+        {/* Floating Auto-Hiding Toolbar */}
+        <AnimatePresence>
+          {isToolbarVisible && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.2 }}
+              onMouseEnter={() => {
+                if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+                setIsToolbarVisible(true);
+              }}
+              className="absolute bottom-6 right-6 z-30 flex items-center space-x-1 p-1 bg-surface-card/90 backdrop-blur-md border border-line-medium rounded-lg shadow-xl"
+            >
               <button
-                onClick={() => setShowInspector(false)}
-                className="text-zinc-500 hover:text-white text-xs font-mono"
+                type="button"
+                onClick={() => setZoomLevel(prev => Math.max(70, prev - 15))}
+                className="p-1.5 rounded hover:bg-surface-elevated text-ink-muted hover:text-ink-heading transition-colors"
+                title="Zoom out"
               >
-                ✕
+                <ZoomOut className="w-3.5 h-3.5" strokeWidth={1.5} />
               </button>
-            </div>
+              <span className="text-[11px] font-mono text-ink-muted px-1.5 min-w-[42px] text-center">
+                {zoomLevel}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoomLevel(prev => Math.min(160, prev + 15))}
+                className="p-1.5 rounded hover:bg-surface-elevated text-ink-muted hover:text-ink-heading transition-colors"
+                title="Zoom in"
+              >
+                <ZoomIn className="w-3.5 h-3.5" strokeWidth={1.5} />
+              </button>
+              <div className="h-3.5 w-[1px] bg-line-subtle mx-0.5"></div>
+              <button
+                type="button"
+                onClick={() => setZoomLevel(100)}
+                className="p-1.5 rounded hover:bg-surface-elevated text-ink-muted hover:text-ink-heading transition-colors"
+                title="Reset zoom"
+              >
+                <RotateCcw className="w-3 h-3" strokeWidth={1.5} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-            <div className="space-y-2.5 text-xs font-mono">
-              {Object.entries(currentIteration.facial_state).map(([key, value]) => {
-                const isModified = currentIteration.changed_fields.includes(key as keyof FacialStateJSON);
-                return (
-                  <div
-                    key={key}
-                    className={`p-2 rounded border ${
-                      isModified
-                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-200'
-                        : 'bg-[#131722] border-white/[0.06] text-zinc-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between text-[10px] text-zinc-400 uppercase font-semibold mb-1">
-                      <span>{key.replace(/_/g, ' ')}</span>
-                      {isModified && (
-                        <span className="text-[9px] px-1 bg-amber-400 text-black font-bold rounded">
-                          UPDATED
-                        </span>
-                      )}
+        {/* 14-Point Anatomical Inspector Drawer */}
+        <AnimatePresence>
+          {showInspector && (
+            <motion.div
+              initial={{ x: '100%', opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '100%', opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              className="absolute right-0 top-0 bottom-0 w-80 bg-surface-card/95 backdrop-blur-md border-l border-line-medium p-4 overflow-y-auto z-40 shadow-2xl"
+            >
+              <div className="flex items-center justify-between pb-3 mb-3 border-b border-line-subtle">
+                <div className="flex items-center space-x-2 text-xs font-semibold text-ink-heading">
+                  <Info className="w-3.5 h-3.5 text-accent" strokeWidth={1.5} />
+                  <span>14-Point Facial State</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowInspector(false)}
+                  className="text-ink-muted hover:text-ink-heading text-xs font-mono p-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                {Object.entries(currentIteration.facial_state).map(([key, value]) => {
+                  const isModified = currentIteration.changed_fields.includes(key as keyof FacialStateJSON);
+                  return (
+                    <div
+                      key={key}
+                      className={`p-2.5 rounded-lg border transition-colors ${
+                        isModified
+                          ? 'bg-surface-elevated border-accent/40 text-ink-heading'
+                          : 'bg-surface-base border-line-subtle text-ink-muted'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[10px] font-mono uppercase text-ink-faint mb-1">
+                        <span>{key.replace(/_/g, ' ')}</span>
+                        {isModified && (
+                          <span className="text-[9px] px-1 py-0.2 bg-accent/20 text-accent font-semibold rounded">
+                            Updated
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-ink-body font-sans leading-relaxed">
+                        {value}
+                      </div>
                     </div>
-                    <div className="text-[11px] leading-relaxed text-zinc-200 font-sans">
-                      {value}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Bottom Bar: Witness Likeness Score Rating Slider */}
-      <div className="p-3 bg-[#0d1017] border-t border-white/[0.08] flex items-center justify-between gap-4">
-        <div className="flex items-center space-x-3 flex-1 max-w-xl">
-          <div className="flex items-center space-x-1.5 text-xs font-medium text-zinc-300 whitespace-nowrap">
+      {/* Bottom Bar: Witness Likeness Score */}
+      <div className="p-3 bg-surface-base border-t border-line-subtle flex items-center justify-between gap-4">
+        <div className="flex items-center space-x-3 flex-1 max-w-md">
+          <div className="flex items-center space-x-2 text-xs text-ink-body whitespace-nowrap">
             <span>Witness Likeness:</span>
-            <span className="font-mono font-bold text-emerald-400 text-sm">
-              {likenessInput} / 10
+            <span className="font-mono font-semibold text-ink-heading text-sm">
+              {likenessInput} <span className="text-xs text-ink-muted">/ 10</span>
             </span>
           </div>
 
@@ -528,18 +632,20 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
             step="0.1"
             value={likenessInput}
             onChange={e => handleLikenessChange(parseFloat(e.target.value))}
-            className="flex-1 accent-amber-500 h-1.5 bg-zinc-800 rounded-lg cursor-pointer"
+            className="flex-1 accent-accent h-1.5 bg-surface-elevated rounded-lg cursor-pointer"
           />
         </div>
 
-        <div className="flex items-center space-x-3 text-xs font-mono text-zinc-400">
-          <span className="hidden sm:inline">
-            Status: {likenessInput >= 8 ? '✅ Court Ready' : likenessInput >= 6 ? '⚡ Promising Lead' : '⏳ Preliminary'}
+        <div className="flex items-center space-x-2 text-xs text-ink-muted font-sans">
+          <span>
+            {likenessInput >= 8
+              ? 'Court-Ready Composite'
+              : likenessInput >= 6
+              ? 'Promising Lead Draft'
+              : 'Preliminary Memory Slice'}
           </span>
-          <span className="text-zinc-600">|</span>
-          <span className="text-amber-400">
-            Audit Event Auto-Logged
-          </span>
+          <span className="text-line-medium">•</span>
+          <span className="text-ink-faint font-mono text-[11px]">Audit Auto-Logged</span>
         </div>
       </div>
     </div>

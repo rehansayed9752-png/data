@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { RefinementChat } from './RefinementChat';
 import { FeatureQuickChips } from './FeatureQuickChips';
 import { CanvasViewer } from './CanvasViewer';
@@ -13,6 +14,7 @@ import {
   OfficerProfile,
 } from '../../types/forensic';
 import { generateForensicSketchDataUrl } from '../../utils/proceduralSketch';
+import { panelContainer, panelRise } from '../../styles/tokens';
 
 interface SketchStudioProps {
   caseFile: CaseFile;
@@ -25,6 +27,12 @@ interface SketchStudioProps {
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   onLogAuditEvent: (actionType: any, target: string, details: any) => void;
+  externalToolTrigger?: {
+    tabMode?: 'canvas' | 'variations';
+    isCompareMode?: boolean;
+    showInspector?: boolean;
+    showDisguises?: boolean;
+  };
 }
 
 export const SketchStudio: React.FC<SketchStudioProps> = ({
@@ -38,6 +46,7 @@ export const SketchStudio: React.FC<SketchStudioProps> = ({
   messages,
   setMessages,
   onLogAuditEvent,
+  externalToolTrigger,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
 
@@ -169,7 +178,7 @@ export const SketchStudio: React.FC<SketchStudioProps> = ({
       const systemReply: ChatMessage = {
         id: `sys-${Date.now()}`,
         sender: 'system',
-        text: `Iteration #${nextIterationNumber} generated via gemini-2.5-flash-image. Identity locked. Updated anatomical regions: ${changedFields.join(', ')}.`,
+        text: `Iteration #${nextIterationNumber} generated. Identity locked. Updated anatomical regions: ${changedFields.join(', ')}.`,
         timestamp: new Date().toISOString(),
         changed_traits: changedFields,
       };
@@ -207,7 +216,7 @@ export const SketchStudio: React.FC<SketchStudioProps> = ({
       id: `iter-${nextIterationNumber}-branch`,
       iteration_number: nextIterationNumber,
       parent_iteration_id: iterationToFork.id,
-      witness_prompt: `[BRANCHED FROM #${iterationToFork.iteration_number}] Memory update branch`,
+      witness_prompt: `[Branch from #${iterationToFork.iteration_number}] Memory update`,
       created_at: new Date().toISOString(),
     };
 
@@ -221,12 +230,20 @@ export const SketchStudio: React.FC<SketchStudioProps> = ({
   };
 
   return (
-    <div className="flex-1 p-3 flex flex-col space-y-3 overflow-hidden max-w-[1700px] mx-auto w-full">
-      {/* Main split-screen layout */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0">
-        {/* Left Column (5 of 12 cols = ~42% width): Chat & Quick-Chips */}
-        <div className="lg:col-span-5 flex flex-col space-y-3 min-h-[520px]">
-          <div className="flex-1 min-h-0">
+    <motion.div
+      variants={panelContainer}
+      initial="hidden"
+      animate="visible"
+      className="flex-1 p-3 sm:p-4 flex flex-col space-y-3 overflow-hidden max-w-[1700px] mx-auto w-full font-sans"
+    >
+      {/* Split-screen layout */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3.5 min-h-0">
+        {/* Left Column: Witness Chat & Feature Quick Chips */}
+        <motion.div
+          variants={panelRise}
+          className="lg:col-span-5 flex flex-col space-y-3 min-h-[460px] lg:min-h-0 lg:h-full lg:overflow-hidden"
+        >
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <RefinementChat
               messages={messages}
               onSendMessage={handleWitnessMessage}
@@ -235,32 +252,40 @@ export const SketchStudio: React.FC<SketchStudioProps> = ({
             />
           </div>
 
-          <FeatureQuickChips
-            onSelectTrait={handleSelectTrait}
-            disabled={isLoading}
-          />
-        </div>
+          <div className="flex-shrink-0">
+            <FeatureQuickChips
+              onSelectTrait={handleSelectTrait}
+              disabled={isLoading}
+            />
+          </div>
+        </motion.div>
 
-        {/* Right Column (7 of 12 cols = ~58% width): Canvas Viewport */}
-        <div className="lg:col-span-7 flex flex-col space-y-3 min-h-[520px]">
-          <div className="flex-1 min-h-0">
+        {/* Right Column: Canvas Viewport & Iteration Timeline */}
+        <motion.div
+          variants={panelRise}
+          className="lg:col-span-7 flex flex-col space-y-3 min-h-[460px] lg:min-h-0 lg:h-full lg:overflow-hidden"
+        >
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <CanvasViewer
               currentIteration={currentIteration}
               previousIteration={previousIteration}
               renderStyle={renderStyle}
               onUpdateLikeness={handleUpdateLikeness}
               onSelectVariation={handleBranchIteration}
+              externalToolTrigger={externalToolTrigger}
             />
           </div>
 
-          <IterationTimeline
-            iterations={iterations}
-            currentIterationId={currentIteration.id}
-            onSelectIteration={it => setCurrentIterationId(it.id)}
-            onBranchIteration={handleBranchIteration}
-          />
-        </div>
+          <div className="flex-shrink-0">
+            <IterationTimeline
+              iterations={iterations}
+              currentIterationId={currentIteration.id}
+              onSelectIteration={it => setCurrentIterationId(it.id)}
+              onBranchIteration={handleBranchIteration}
+            />
+          </div>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 };

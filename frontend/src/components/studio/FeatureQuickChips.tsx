@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Sparkles, Tag, ChevronRight } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Tag, Sparkles } from 'lucide-react';
 import { FacialStateJSON } from '../../types/forensic';
+import { buttonHoverLift } from '../../styles/tokens';
 
 interface FeatureQuickChipsProps {
   onSelectTrait: (traitCategory: keyof FacialStateJSON, traitValue: string, promptSnippet: string) => void;
@@ -19,8 +21,8 @@ const TRAIT_CATEGORIES: TraitCategory[] = [
     title: 'Jaw & Chin',
     chips: [
       { label: 'Square Jaw', value: 'Broad square mandibular jawline with blunt chin', prompt: 'Make the jawline broad, sharp, and square.' },
-      { label: 'Narrow Pointed Chin', value: 'Tapered angular jaw with narrower pointed chin', prompt: 'Make the chin narrower and more pointed with a tapered jawline.' },
-      { label: 'Deep Cleft Chin', value: 'Pronounced vertical cleft groove in center of chin', prompt: 'Add a distinct cleft indentation in the center of the chin.' },
+      { label: 'Pointed Chin', value: 'Tapered angular jaw with narrower pointed chin', prompt: 'Make the chin narrower and more pointed with a tapered jawline.' },
+      { label: 'Cleft Chin', value: 'Pronounced vertical cleft groove in center of chin', prompt: 'Add a distinct cleft indentation in the center of the chin.' },
       { label: 'Heavy Mandible', value: 'Heavy wide mandibular gonial angle with strong bone ridge', prompt: 'Widen the lower mandible for a heavier bone structure.' },
     ],
   },
@@ -29,46 +31,46 @@ const TRAIT_CATEGORIES: TraitCategory[] = [
     title: 'Eyes & Brows',
     chips: [
       { label: 'Narrow Almond', value: 'Narrow deep-set almond eyes, hooded palpebral fold', prompt: 'Narrow the eyes into almond-shaped slits with hooded lids.' },
-      { label: 'Bushy Thick Brows', value: 'Very thick bushy dark eyebrows with low horizontal arch', prompt: 'Make the eyebrows thicker, darker, and bushy.' },
+      { label: 'Bushy Brows', value: 'Very thick bushy dark eyebrows with low horizontal arch', prompt: 'Make the eyebrows thicker, darker, and bushy.' },
       { label: 'Wide-Set Eyes', value: 'Almond eyes positioned with wider interpupillary distance', prompt: 'Set the eyes slightly wider apart from each other.' },
-      { label: 'Deep Periorbital Bags', value: 'Pronounced dark under-eye fatigue bags and hollows', prompt: 'Add dark fatigue shadows and periorbital bags under the eyes.' },
+      { label: 'Under-Eye Bags', value: 'Pronounced dark under-eye fatigue bags and hollows', prompt: 'Add dark fatigue shadows and periorbital bags under the eyes.' },
     ],
   },
   {
     key: 'nose',
     title: 'Nose & Cheeks',
     chips: [
-      { label: 'Hooked / Broken Tip', value: 'Crooked bridge with slight hooked downward tip from suspected fracture', prompt: 'Make the nose bridge crooked with a slight hooked downward tip.' },
+      { label: 'Hooked Bridge', value: 'Crooked bridge with slight hooked downward tip from suspected fracture', prompt: 'Make the nose bridge crooked with a slight hooked downward tip.' },
       { label: 'High Cheekbones', value: 'High prominent zygomatic arches, sunken lower cheeks', prompt: 'Sharpen and elevate the cheekbones with sunken lower cheeks.' },
       { label: 'Broad Nasal Base', value: 'Flared alar base with wide nostrils', prompt: 'Widen the nostrils and nasal base.' },
-      { label: 'Straight Thin Bridge', value: 'Straight narrow aquiline nose bridge', prompt: 'Make the nose bridge straight, thin, and symmetrical.' },
+      { label: 'Straight Aquiline', value: 'Straight narrow aquiline nose bridge', prompt: 'Make the nose bridge straight, thin, and symmetrical.' },
     ],
   },
   {
     key: 'facial_hair',
-    title: 'Beard & Stubble',
+    title: 'Facial Hair',
     chips: [
-      { label: 'Heavy 5 O\'Clock Shadow', value: 'Dense dark 5-o-clock stubble across lower cheeks and jaw', prompt: 'Add dense dark 5 o-clock stubble across the jaw and chin.' },
-      { label: 'Pencil Thin Mustache', value: 'Trimmed pencil mustache contour along upper lip margin', prompt: 'Add a neat pencil-thin dark mustache above the upper lip.' },
-      { label: 'Rough Goatee', value: 'Short trimmed goatee patch beneath lower lip and chin', prompt: 'Add a short, rough dark goatee on the chin.' },
+      { label: '5 O\'Clock Shadow', value: 'Dense dark 5-o-clock stubble across lower cheeks and jaw', prompt: 'Add dense dark 5 o-clock stubble across the jaw and chin.' },
+      { label: 'Pencil Mustache', value: 'Trimmed pencil mustache contour along upper lip margin', prompt: 'Add a neat pencil-thin dark mustache above the upper lip.' },
+      { label: 'Trimmed Goatee', value: 'Short trimmed goatee patch beneath lower lip and chin', prompt: 'Add a short, rough dark goatee on the chin.' },
       { label: 'Clean Shaven', value: 'Smooth clean-shaven lower face with visible bone contours', prompt: 'Remove all facial hair and stubble for a clean-shaven appearance.' },
     ],
   },
   {
     key: 'scars_marks_tattoos',
-    title: 'Scars & Identifying Marks',
+    title: 'Scars & Marks',
     chips: [
       { label: 'Right Brow Scar', value: 'Two-inch vertical knife scar above right eyebrow', prompt: 'Add a distinct 2-inch vertical scar above the right eyebrow.' },
-      { label: 'Left Cheek Scar', value: 'Diagonal knife scar across left cheekbone', prompt: 'Add a 1.5-inch diagonal scar across the left cheek.' },
-      { label: 'Mole Near Mouth', value: 'Dark raised mole 1cm to the right of upper lip commissure', prompt: 'Add a small prominent dark mole near the right corner of the mouth.' },
-      { label: 'Burn Texture Mark', value: 'Irregular healed burn discoloration on right temple', prompt: 'Add faint healed burn tissue texture along the right temple.' },
+      { label: 'Cheek Scar', value: 'Diagonal knife scar across left cheekbone', prompt: 'Add a 1.5-inch diagonal scar across the left cheek.' },
+      { label: 'Facial Mole', value: 'Dark raised mole 1cm to the right of upper lip commissure', prompt: 'Add a small prominent dark mole near the right corner of the mouth.' },
+      { label: 'Temple Texture', value: 'Irregular healed burn discoloration on right temple', prompt: 'Add faint healed burn tissue texture along the right temple.' },
     ],
   },
   {
     key: 'accessories',
     title: 'Accessories',
     chips: [
-      { label: 'Wire-Rim Glasses', value: 'Thin rectangular silver wire-rim prescription spectacles', prompt: 'Add thin rectangular silver wire-frame glasses.' },
+      { label: 'Wire Spectacles', value: 'Thin rectangular silver wire-rim prescription spectacles', prompt: 'Add thin rectangular silver wire-frame glasses.' },
       { label: 'Ear Stud', value: 'Small silver metallic stud in left earlobe', prompt: 'Add a small metallic stud piercing in the left earlobe.' },
       { label: 'No Accessories', value: 'No glasses, jewelry, or headgear', prompt: 'Remove any glasses or facial accessories.' },
     ],
@@ -84,41 +86,49 @@ export const FeatureQuickChips: React.FC<FeatureQuickChipsProps> = ({
   const currentCategory = TRAIT_CATEGORIES.find(c => c.key === activeCategory) || TRAIT_CATEGORIES[0];
 
   return (
-    <div className="bg-[#0b0e15] border border-white/[0.08] rounded-lg p-3">
-      {/* Category selector pills */}
-      <div className="flex items-center space-x-1.5 overflow-x-auto pb-2 scrollbar-none border-b border-white/[0.06] mb-2.5">
-        <div className="flex items-center space-x-1 text-[10px] font-mono uppercase text-amber-400 font-semibold pr-2">
-          <Tag className="w-3 h-3" />
-          <span>Traits:</span>
+    <div className="bg-surface-card border border-line-subtle rounded-lg p-3 font-sans">
+      {/* Category selector row */}
+      <div className="flex items-center space-x-1.5 overflow-x-auto pb-2 scrollbar-none border-b border-line-subtle mb-2.5">
+        <div className="flex items-center space-x-1 text-[10.5px] font-mono uppercase tracking-wider text-accent font-semibold pr-2 flex-shrink-0">
+          <Tag className="w-3 h-3 text-accent" strokeWidth={1.5} />
+          <span>Traits</span>
         </div>
-        {TRAIT_CATEGORIES.map(category => (
-          <button
-            key={category.key}
-            onClick={() => setActiveCategory(category.key)}
-            className={`px-2 py-1 rounded text-[11px] whitespace-nowrap transition-all ${
-              activeCategory === category.key
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-medium'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
-            }`}
-          >
-            {category.title}
-          </button>
-        ))}
+        {TRAIT_CATEGORIES.map(category => {
+          const isActive = activeCategory === category.key;
+          return (
+            <button
+              key={category.key}
+              type="button"
+              onClick={() => setActiveCategory(category.key)}
+              className={`px-2.5 py-1 rounded text-xs whitespace-nowrap transition-all ${
+                isActive
+                  ? 'bg-surface-elevated text-ink-heading font-medium border border-line-medium'
+                  : 'text-ink-muted hover:text-ink-body hover:bg-surface-elevated/50'
+              }`}
+            >
+              {category.title}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Trait chips grid */}
-      <div className="flex flex-wrap gap-1.5">
+      {/* Trait chips */}
+      <div className="flex items-center flex-wrap gap-1.5">
         {currentCategory.chips.map(chip => (
-          <button
+          <motion.button
             key={chip.label}
+            type="button"
+            variants={buttonHoverLift}
+            initial="rest"
+            whileHover={disabled ? undefined : 'hover'}
+            whileTap={disabled ? undefined : 'tap'}
             disabled={disabled}
             onClick={() => onSelectTrait(currentCategory.key, chip.value, chip.prompt)}
-            className="group flex items-center space-x-1 px-2.5 py-1 rounded bg-[#131722] hover:bg-amber-500/15 border border-white/[0.08] hover:border-amber-500/40 text-xs text-zinc-300 hover:text-amber-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="group flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-surface-base hover:bg-surface-elevated border border-line-subtle hover:border-line-medium text-ink-body hover:text-ink-heading text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <span className="text-amber-400/80 group-hover:text-amber-300 font-mono text-[11px]">+</span>
+            <span className="w-1 h-1 rounded-full bg-accent group-hover:scale-125 transition-transform"></span>
             <span>{chip.label}</span>
-            <ChevronRight className="w-3 h-3 text-zinc-600 group-hover:text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
+          </motion.button>
         ))}
       </div>
     </div>
