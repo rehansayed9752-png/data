@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { Navbar } from './components/layout/Navbar';
+import { Header } from './components/layout/Header';
+import { SideDrawer } from './components/layout/SideDrawer';
+import { NewCaseModal } from './components/cases/NewCaseModal';
+import { CaseSwitcherModal } from './components/cases/CaseSwitcherModal';
 import { SketchStudio } from './components/studio/SketchStudio';
 import { InvestigationDashboard } from './components/dashboard/InvestigationDashboard';
 import { AuditLogView } from './components/audit/AuditLogView';
@@ -27,8 +30,20 @@ import { generateCourtDossierPdf, downloadHighResCompositePng } from './utils/ex
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'studio' | 'dashboard' | 'audit'>('studio');
   const [currentOfficer, setCurrentOfficer] = useState<OfficerProfile>(DEMO_OFFICERS[0]);
+  const [cases, setCases] = useState<CaseFile[]>(INITIAL_CASES);
   const [activeCase, setActiveCase] = useState<CaseFile>(INITIAL_CASES[0]);
   const [renderStyle, setRenderStyle] = useState<RenderStyle>('forensic_graphite');
+
+  // Modal and drawer visibility
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isNewCaseModalOpen, setIsNewCaseModalOpen] = useState(false);
+  const [isCaseSwitcherOpen, setIsCaseSwitcherOpen] = useState(false);
+  const [canvasToolTrigger, setCanvasToolTrigger] = useState<{
+    tabMode?: 'canvas' | 'variations';
+    isCompareMode?: boolean;
+    showInspector?: boolean;
+    showDisguises?: boolean;
+  }>({});
 
   const [iterations, setIterations] = useState<SketchIteration[]>(INITIAL_ITERATIONS);
   const [currentIterationId, setCurrentIterationId] = useState<string>('iter-3');
@@ -168,8 +183,8 @@ export const App: React.FC = () => {
 
     triggerToast(
       isValid
-        ? '✅ Cryptographic SHA-256 audit chain verified. 0 tampered entries detected.'
-        : '❌ Audit chain integrity failure detected!'
+        ? 'Audit chain verified. Zero tampered entries detected.'
+        : 'Audit chain integrity failure detected!'
     );
 
     return isValid;
@@ -194,7 +209,7 @@ export const App: React.FC = () => {
       officer_badge: currentOfficer.badge_number,
       total_iterations_included: iterations.length,
     });
-    triggerToast('✅ Official Court Dossier PDF downloaded.');
+    triggerToast('Official Court Dossier PDF downloaded.');
   };
 
   // Export 2048px PNG
@@ -205,7 +220,7 @@ export const App: React.FC = () => {
       resolution: '2048x2048',
       officer_badge: currentOfficer.badge_number,
     });
-    triggerToast('✅ 2048x2048 PNG Composite exported with forensic footer.');
+    triggerToast('2048×2048 PNG Composite exported with forensic footer.');
   };
 
   // Flag Suspect Lead
@@ -221,40 +236,122 @@ export const App: React.FC = () => {
         similarity_score: suspect.similarity_score,
         matched_attributes: suspect.matched_attributes,
       });
-      triggerToast(`🚩 Lead flagged: ${suspect.full_name} (${suspect.similarity_score}% Match)`);
+      triggerToast(`Lead flagged: ${suspect.full_name} (${suspect.similarity_score}% Match)`);
     }
   };
 
+  // Create new case
+  const handleCreateCase = (newCase: CaseFile) => {
+    setCases(prev => [newCase, ...prev]);
+    setActiveCase(newCase);
+    handleLogAuditEvent('CREATED_CASE_FILE', `New Case ${newCase.case_number}`, {
+      case_number: newCase.case_number,
+      title: newCase.title,
+    });
+    triggerToast(`Opened new case: ${newCase.case_number}`);
+  };
+
+  // Select case from switcher
+  const handleSelectCase = (selectedCase: CaseFile) => {
+    setActiveCase(selectedCase);
+    handleLogAuditEvent('OPENED_CASE_FILE', `Switched to Case ${selectedCase.case_number}`, {
+      case_number: selectedCase.case_number,
+    });
+    triggerToast(`Switched to: ${selectedCase.case_number}`);
+  };
+
   return (
-    <div className="min-h-screen bg-[#08090d] text-[#f4f6fa] flex flex-col font-sans relative selection:bg-amber-500/30">
-      {/* Noise texture overlay for tactile paper/canvas feel */}
+    <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-surface-base text-ink-body flex flex-col font-sans relative selection:bg-accent/20 selection:text-ink-heading">
+      {/* Editorial noise texture overlay */}
       <div className="noise-overlay" />
 
       {/* Global Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#141926] border border-amber-500/40 text-amber-200 px-4 py-2.5 rounded-lg shadow-2xl flex items-center space-x-2 text-xs font-mono animate-fadeIn">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+        <div className="fixed bottom-6 right-6 z-50 bg-surface-elevated border border-line-medium text-ink-heading px-4 py-2.5 rounded-lg shadow-xl flex items-center space-x-2.5 text-xs font-sans">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent"></span>
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Navigation Command Bar */}
-      <Navbar
+      {/* Clean Minimal Header */}
+      <Header
+        onOpenBurgerMenu={() => setIsDrawerOpen(true)}
+        activeCase={activeCase}
+        onOpenCaseSwitcher={() => setIsCaseSwitcherOpen(true)}
+        onOpenNewCase={() => setIsNewCaseModalOpen(true)}
+        onExportPdf={handleExportPdf}
+        currentOfficer={currentOfficer}
+      />
+
+      {/* Side Drawer Menu */}
+      <SideDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        renderStyle={renderStyle}
+        setRenderStyle={setRenderStyle}
         currentOfficer={currentOfficer}
         setCurrentOfficer={setCurrentOfficer}
         activeCase={activeCase}
-        renderStyle={renderStyle}
-        setRenderStyle={setRenderStyle}
-        onRunDbMatch={() => setIsMatchModalOpen(true)}
-        onExportPng={handleExportPng}
-        onExportPdf={handleExportPdf}
+        onOpenMatchModal={() => {
+          setIsDrawerOpen(false);
+          setIsMatchModalOpen(true);
+        }}
+        onToggleDisguiseDrawer={() => {
+          setActiveTab('studio');
+          setCanvasToolTrigger(prev => ({ ...prev, showDisguises: !prev.showDisguises }));
+          setIsDrawerOpen(false);
+        }}
+        onToggleAnatomyInspector={() => {
+          setActiveTab('studio');
+          setCanvasToolTrigger(prev => ({ ...prev, showInspector: !prev.showInspector }));
+          setIsDrawerOpen(false);
+        }}
+        onToggleSplitComparison={() => {
+          setActiveTab('studio');
+          setCanvasToolTrigger({ tabMode: 'canvas', isCompareMode: true });
+          setIsDrawerOpen(false);
+        }}
+        onToggleVariationsView={() => {
+          setActiveTab('studio');
+          setCanvasToolTrigger({ tabMode: 'variations', isCompareMode: false });
+          setIsDrawerOpen(false);
+        }}
+        onExportPng={() => {
+          setIsDrawerOpen(false);
+          handleExportPng();
+        }}
+        onExportPdf={() => {
+          setIsDrawerOpen(false);
+          handleExportPdf();
+        }}
         isAuditVerified={isAuditVerified}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-h-0">
+      {/* New Case Modal */}
+      <NewCaseModal
+        isOpen={isNewCaseModalOpen}
+        onClose={() => setIsNewCaseModalOpen(false)}
+        onCreateCase={handleCreateCase}
+        leadOfficerId={currentOfficer.officer_id}
+      />
+
+      {/* Case Switcher Modal */}
+      <CaseSwitcherModal
+        isOpen={isCaseSwitcherOpen}
+        onClose={() => setIsCaseSwitcherOpen(false)}
+        cases={cases}
+        activeCaseId={activeCase.id}
+        onSelectCase={handleSelectCase}
+        onOpenNewCase={() => {
+          setIsCaseSwitcherOpen(false);
+          setIsNewCaseModalOpen(true);
+        }}
+      />
+
+      {/* Main Content Viewport */}
+      <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {activeTab === 'studio' && (
           <SketchStudio
             caseFile={activeCase}
@@ -267,27 +364,32 @@ export const App: React.FC = () => {
             messages={messages}
             setMessages={setMessages}
             onLogAuditEvent={handleLogAuditEvent}
+            externalToolTrigger={canvasToolTrigger}
           />
         )}
 
         {activeTab === 'dashboard' && (
-          <InvestigationDashboard
-            caseFile={activeCase}
-            currentOfficer={currentOfficer}
-            currentIteration={currentIteration}
-            flaggedLeads={flaggedLeads}
-            onOpenMatchModal={() => setIsMatchModalOpen(true)}
-            onNavigateToStudio={() => setActiveTab('studio')}
-            isAuditVerified={isAuditVerified}
-          />
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+            <InvestigationDashboard
+              caseFile={activeCase}
+              currentOfficer={currentOfficer}
+              currentIteration={currentIteration}
+              flaggedLeads={flaggedLeads}
+              onOpenMatchModal={() => setIsMatchModalOpen(true)}
+              onNavigateToStudio={() => setActiveTab('studio')}
+              isAuditVerified={isAuditVerified}
+            />
+          </div>
         )}
 
         {activeTab === 'audit' && (
-          <AuditLogView
-            auditLogs={auditLogs}
-            onVerifyChain={handleVerifyChain}
-            isVerified={isAuditVerified}
-          />
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+            <AuditLogView
+              auditLogs={auditLogs}
+              onVerifyChain={handleVerifyChain}
+              isVerified={isAuditVerified}
+            />
+          </div>
         )}
       </main>
 
