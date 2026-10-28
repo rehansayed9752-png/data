@@ -177,11 +177,10 @@ export const RefinementChat: React.FC<RefinementChatProps> = ({
           <button
             type="button"
             onClick={() => setInterviewMode(!interviewMode)}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center space-x-1.5 transition-all ${
-              interviewMode
-                ? 'bg-accent/20 text-accent border border-accent/40'
-                : 'bg-surface-elevated text-ink-muted hover:text-ink-body border border-line-subtle'
-            }`}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center space-x-1.5 transition-all ${interviewMode
+              ? 'bg-accent/20 text-accent border border-accent/40'
+              : 'bg-surface-elevated text-ink-muted hover:text-ink-body border border-line-subtle'
+              }`}
             title="Toggle sequential question assistance"
           >
             <Bot className="w-3.5 h-3.5 text-accent" strokeWidth={1.5} />
@@ -238,7 +237,16 @@ export const RefinementChat: React.FC<RefinementChatProps> = ({
               <button
                 key={hint}
                 type="button"
-                onClick={() => setInputText(hint)}
+                onClick={() => {
+                  let originalText: string | undefined = undefined;
+                  if (selectedLanguage !== 'en') {
+                    originalText = hint;
+                  }
+                  onSendMessage(hint, confidence, selectedLanguage, originalText);
+                  if (interviewMode && questionIndex < COGNITIVE_QUESTIONS.length - 1) {
+                    setQuestionIndex(prev => prev + 1);
+                  }
+                }}
                 className="px-2 py-0.5 rounded bg-surface-card hover:bg-surface-elevated border border-line-subtle text-[11px] text-ink-muted hover:text-ink-body transition-colors"
               >
                 + {hint}
@@ -266,11 +274,10 @@ export const RefinementChat: React.FC<RefinementChatProps> = ({
                 className={`flex flex-col ${isWitness ? 'items-end' : 'items-start'}`}
               >
                 <div
-                  className={`max-w-[85%] p-3 rounded-lg text-xs leading-relaxed border transition-colors ${
-                    isWitness
-                      ? 'bg-surface-elevated text-ink-heading border-line-medium'
-                      : 'bg-surface-base text-ink-body border-line-subtle'
-                  }`}
+                  className={`max-w-[85%] p-3 rounded-lg text-xs leading-relaxed border transition-colors ${isWitness
+                    ? 'bg-surface-elevated text-ink-heading border-line-medium'
+                    : 'bg-surface-base text-ink-body border-line-subtle'
+                    }`}
                 >
                   {/* Meta Header */}
                   <div className="flex items-center justify-between gap-3 text-[10.5px] text-ink-muted pb-1 mb-1.5 border-b border-line-subtle">
@@ -365,11 +372,10 @@ export const RefinementChat: React.FC<RefinementChatProps> = ({
                 key={rate}
                 type="button"
                 onClick={() => setConfidence(rate)}
-                className={`px-2 py-0.5 rounded text-[10.5px] font-mono capitalize transition-all ${
-                  confidence === rate
-                    ? 'bg-accent/20 text-accent border border-accent/40 font-medium'
-                    : 'text-ink-muted hover:text-ink-heading hover:bg-surface-elevated'
-                }`}
+                className={`px-2 py-0.5 rounded text-[10.5px] font-mono capitalize transition-all ${confidence === rate
+                  ? 'bg-accent/20 text-accent border border-accent/40 font-medium'
+                  : 'text-ink-muted hover:text-ink-heading hover:bg-surface-elevated'
+                  }`}
               >
                 {rate.replace('_', ' ')}
               </button>
@@ -401,11 +407,10 @@ export const RefinementChat: React.FC<RefinementChatProps> = ({
               type="button"
               onClick={handleToggleVoice}
               disabled={isLoading}
-              className={`p-1.5 rounded-md transition-all ${
-                isRecording
-                  ? 'bg-accent text-surface-base animate-pulse'
-                  : 'text-ink-muted hover:text-accent hover:bg-surface-elevated'
-              }`}
+              className={`p-1.5 rounded-md transition-all ${isRecording
+                ? 'bg-accent text-surface-base animate-pulse'
+                : 'text-ink-muted hover:text-accent hover:bg-surface-elevated'
+                }`}
               title="Speak description via browser speech recognition"
             >
               {isRecording ? <MicOff className="w-4 h-4" strokeWidth={1.5} /> : <Mic className="w-4 h-4" strokeWidth={1.5} />}

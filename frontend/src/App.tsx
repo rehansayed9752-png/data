@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/layout/Header';
 import { SideDrawer } from './components/layout/SideDrawer';
 import { NewCaseModal } from './components/cases/NewCaseModal';
@@ -26,6 +26,7 @@ import {
 } from './data/mockForensicData';
 import { computeAuditRowHash } from './utils/crypto';
 import { generateCourtDossierPdf, downloadHighResCompositePng } from './utils/exportDossier';
+import { apiClient } from './api/client';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'studio' | 'dashboard' | 'audit'>('studio');
@@ -240,7 +241,25 @@ export const App: React.FC = () => {
     }
   };
 
-  // Create new case
+  // Load cases from backend on mount if available
+  useEffect(() => {
+    apiClient
+      .getCases()
+      .then((serverCases) => {
+        if (serverCases && serverCases.length > 0) {
+          setCases(prev => {
+            const existingIds = new Set(prev.map(c => c.id));
+            const newServerCases = serverCases.filter(sc => !existingIds.has(sc.id));
+            return [...prev, ...newServerCases];
+          });
+        }
+      })
+      .catch(() => {
+        // Backend offline, fallback to initial demo cases
+      });
+  }, []);
+
+  // Create new case with backend synchronization
   const handleCreateCase = (newCase: CaseFile) => {
     setCases(prev => [newCase, ...prev]);
     setActiveCase(newCase);
@@ -248,6 +267,25 @@ export const App: React.FC = () => {
       case_number: newCase.case_number,
       title: newCase.title,
     });
+
+    apiClient
+      .createCase({
+        title: newCase.title,
+        incident_location: newCase.incident_location,
+        witness_alias: newCase.witness_alias,
+        render_style: newCase.render_style,
+        lead_officer_id: currentOfficer.officer_id,
+      })
+      .then((createdServerCase) => {
+        if (createdServerCase?.id) {
+          setActiveCase(prev => ({ ...prev, id: createdServerCase.id }));
+          setCases(prev => prev.map(c => c.id === newCase.id ? { ...c, id: createdServerCase.id } : c));
+        }
+      })
+      .catch(() => {
+        // Graceful offline fallback already handled in state
+      });
+
     triggerToast(`Opened new case: ${newCase.case_number}`);
   };
 

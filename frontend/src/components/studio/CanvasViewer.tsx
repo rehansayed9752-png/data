@@ -74,8 +74,10 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
     };
   }, []);
 
-  // Variations list A, B, C
-  const [variationsList] = useState<SketchIteration[]>(() => {
+  // Variations A, B, C based on current iteration with subtle surgical alterations, updated dynamically on renderStyle or iteration change
+  const [variationsList, setVariationsList] = useState<SketchIteration[]>([]);
+
+  useEffect(() => {
     const varA: SketchIteration = {
       ...currentIteration,
       id: `${currentIteration.id}-varA`,
@@ -127,8 +129,8 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
       ),
     };
 
-    return [varA, varB, varC];
-  });
+    setVariationsList([varA, varB, varC]);
+  }, [currentIteration, renderStyle]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -145,22 +147,30 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
     onUpdateLikeness(newVal);
   };
 
+  // Helper for disguise modified image URL or instant renderStyle re-render for procedural/SVG iterations
   const getDisguisedImageUrl = () => {
-    if (!activeDisguise) return currentIteration.image_url;
-    const modifiedState = { ...currentIteration.facial_state };
+    let modifiedState = { ...currentIteration.facial_state };
 
-    if (activeDisguise.id === 'disguise-cap') {
-      modifiedState.hair_style_texture = 'Occluded by dark tactical beanie pulled low over forehead';
-      modifiedState.forehead = 'Upper forehead completely covered by knit cap';
-    } else if (activeDisguise.id === 'disguise-glasses') {
-      modifiedState.accessories = 'Large dark aviator tinted sunglasses concealing eyes and brows';
-    } else if (activeDisguise.id === 'disguise-beard') {
-      modifiedState.facial_hair = 'Thick full bushy black beard concealing jawline and chin contour';
-    } else if (activeDisguise.id === 'disguise-mask') {
-      modifiedState.accessories = 'Blue surgical protective mask covering nose tip, mouth, and chin';
+    if (activeDisguise) {
+      if (activeDisguise.id === 'disguise-cap') {
+        modifiedState.hair_style_texture = 'Occluded by dark tactical beanie pulled low over forehead';
+        modifiedState.forehead = 'Upper forehead completely covered by knit cap';
+      } else if (activeDisguise.id === 'disguise-glasses') {
+        modifiedState.accessories = 'Large dark aviator tinted sunglasses concealing eyes and brows';
+      } else if (activeDisguise.id === 'disguise-beard') {
+        modifiedState.facial_hair = 'Thick full bushy black beard concealing jawline and chin contour';
+      } else if (activeDisguise.id === 'disguise-mask') {
+        modifiedState.accessories = 'Blue surgical protective mask covering nose tip, mouth, and chin';
+      }
+      return generateForensicSketchDataUrl(modifiedState, renderStyle, 999121, currentIteration.iteration_number);
     }
 
-    return generateForensicSketchDataUrl(modifiedState, renderStyle, 999121, currentIteration.iteration_number);
+    // If procedural sketch data URL or local-procedural provider, immediately re-render using chosen renderStyle
+    if (currentIteration.image_url?.startsWith('data:image/svg+xml') || currentIteration.ai_provider === 'local-procedural') {
+      return generateForensicSketchDataUrl(currentIteration.facial_state, renderStyle, 849204, currentIteration.iteration_number);
+    }
+
+    return currentIteration.image_url;
   };
 
   useEffect(() => {
@@ -178,14 +188,7 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
     }
   }, [externalToolTrigger]);
 
-  const activeDisplayImage = activeDisguise
-    ? getDisguisedImageUrl()
-    : generateForensicSketchDataUrl(
-        currentIteration.facial_state,
-        renderStyle,
-        849204,
-        currentIteration.iteration_number
-      );
+  const activeDisplayImage = getDisguisedImageUrl();
 
   return (
     <div
