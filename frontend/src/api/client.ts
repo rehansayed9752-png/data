@@ -43,10 +43,17 @@ class ApiClient {
     return this.request<CaseFile>(`/cases/${caseId}`);
   }
 
-  async createCase(caseData: Partial<CaseFile>): Promise<CaseFile> {
+  async createCase(caseData: Partial<CaseFile> & { location?: string }): Promise<CaseFile> {
+    const payload = {
+      title: caseData.title,
+      location: caseData.location || caseData.incident_location,
+      witness_alias: caseData.witness_alias,
+      render_style: caseData.render_style || 'forensic_graphite',
+      lead_officer_id: caseData.lead_officer_id,
+    };
     return this.request<CaseFile>('/cases', {
       method: 'POST',
-      body: JSON.stringify(caseData),
+      body: JSON.stringify(payload),
     });
   }
 

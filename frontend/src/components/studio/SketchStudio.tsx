@@ -15,6 +15,7 @@ import {
 } from '../../types/forensic';
 import { generateForensicSketchDataUrl } from '../../utils/proceduralSketch';
 import { panelContainer, panelRise } from '../../styles/tokens';
+import { apiClient } from '../../api/client';
 
 interface SketchStudioProps {
   caseFile: CaseFile;
@@ -96,105 +97,160 @@ export const SketchStudio: React.FC<SketchStudioProps> = ({
 
     setMessages(prev => [...prev, userMessage]);
 
-    // Simulate surgical AI refinement with Gemini 2.5 Flash Image / locked seed
-    setTimeout(() => {
-      const changedFields: (keyof FacialStateJSON)[] = [];
-      const updatedFacialState = { ...currentIteration.facial_state };
+    const formattedPrompt = directCategory && directValue 
+      ? `Adjust ${directCategory} to: ${directValue}. ${text}`
+      : text;
 
-      const lower = text.toLowerCase();
-      if (directCategory && directValue) {
-        updatedFacialState[directCategory] = directValue;
-        changedFields.push(directCategory);
-      } else {
-        // Natural language parsing rules
-        if (lower.includes('jaw') || lower.includes('chin')) {
-          updatedFacialState.jawline_chin = lower.includes('square')
-            ? 'Broad square mandibular jawline with blunt chin'
-            : 'Tapered angular jaw with narrower pointed chin';
-          changedFields.push('jawline_chin');
-        }
-        if (lower.includes('eye') || lower.includes('brow')) {
-          updatedFacialState.eyes = lower.includes('narrow') || lower.includes('almond')
-            ? 'Narrow deep-set almond eyes with intense gaze'
-            : 'Wider hooded almond eyes set slightly further apart';
-          changedFields.push('eyes');
-          if (lower.includes('bushy') || lower.includes('thick')) {
-            updatedFacialState.eyebrows = 'Very thick bushy dark eyebrows with low horizontal arch';
-            changedFields.push('eyebrows');
+    apiClient
+      .generateOrRefineSketch(caseFile.id, {
+        parent_iteration_id: currentIteration.id,
+        witness_prompt: formattedPrompt,
+        render_style: renderStyle,
+        confidence,
+        language,
+      })
+      .then((serverIteration: any) => {
+        // Backend returns SketchIterationSchema which maps to SketchIteration
+        const nextIterationNumber = serverIteration.iteration_number || iterations.length + 1;
+        const mappedIteration: SketchIteration = {
+          id: serverIteration.id || `iter-${nextIterationNumber}`,
+          case_id: serverIteration.case_id || caseFile.id,
+          iteration_number: nextIterationNumber,
+          parent_iteration_id: serverIteration.parent_iteration_id || currentIteration.id,
+          image_url: serverIteration.image_url?.startsWith('/static')
+            ? `http://localhost:8000${serverIteration.image_url}`
+            : (serverIteration.image_url || currentIteration.image_url),
+          witness_prompt: serverIteration.witness_prompt || text,
+          witness_likeness_score: serverIteration.witness_likeness_score || Math.min(9.8, parseFloat((currentIteration.witness_likeness_score + 0.6).toFixed(1))),
+          ai_provider: (serverIteration.ai_provider_used as any) || serverIteration.ai_provider || 'gemini-2.5-flash-image',
+          latency_ms: serverIteration.generation_latency_ms || serverIteration.latency_ms || 2100,
+          created_at: serverIteration.created_at || new Date().toISOString(),
+          facial_state: serverIteration.facial_state_snapshot || serverIteration.facial_state || currentIteration.facial_state,
+          changed_fields: (serverIteration.changed_traits || serverIteration.changed_fields || ['jawline_chin']) as (keyof FacialStateJSON)[],
+          confidence_rating: confidence === 'not_sure' ? 'maybe' : confidence,
+        };
+
+        setIterations(prev => [...prev, mappedIteration]);
+        setCurrentIterationId(mappedIteration.id);
+
+        const systemReply: ChatMessage = {
+          id: `sys-${Date.now()}`,
+          sender: 'system',
+          text: `Iteration #${mappedIteration.iteration_number} generated via ${mappedIteration.ai_provider}. Identity locked. Updated anatomical regions: ${mappedIteration.changed_fields.join(', ')}.`,
+          timestamp: new Date().toISOString(),
+          changed_traits: mappedIteration.changed_fields,
+        };
+        setMessages(prev => [...prev, systemReply]);
+
+        onLogAuditEvent('REFINED_FACIAL_FEATURE', `Iteration #${mappedIteration.iteration_number}`, {
+          parent_iteration: currentIteration.id,
+          witness_prompt: text,
+          changed_fields: mappedIteration.changed_fields,
+          confidence,
+          provider: mappedIteration.ai_provider,
+        });
+
+        setIsLoading(false);
+      })
+      .catch((_err) => {
+        // Fallback strictly to local procedural generator if backend is unreachable
+        const changedFields: (keyof FacialStateJSON)[] = [];
+        const updatedFacialState = { ...currentIteration.facial_state };
+
+        const lower = text.toLowerCase();
+        if (directCategory && directValue) {
+          updatedFacialState[directCategory] = directValue;
+          changedFields.push(directCategory);
+        } else {
+          // Natural language parsing rules
+          if (lower.includes('jaw') || lower.includes('chin')) {
+            updatedFacialState.jawline_chin = lower.includes('square')
+              ? 'Broad square mandibular jawline with blunt chin'
+              : 'Tapered angular jaw with narrower pointed chin';
+            changedFields.push('jawline_chin');
+          }
+          if (lower.includes('eye') || lower.includes('brow')) {
+            updatedFacialState.eyes = lower.includes('narrow') || lower.includes('almond')
+              ? 'Narrow deep-set almond eyes with intense gaze'
+              : 'Wider hooded almond eyes set slightly further apart';
+            changedFields.push('eyes');
+            if (lower.includes('bushy') || lower.includes('thick')) {
+              updatedFacialState.eyebrows = 'Very thick bushy dark eyebrows with low horizontal arch';
+              changedFields.push('eyebrows');
+            }
+          }
+          if (lower.includes('nose')) {
+            updatedFacialState.nose = lower.includes('hook') || lower.includes('crook')
+              ? 'Crooked bridge with slight hooked downward tip'
+              : 'Straight narrow aquiline nose bridge';
+            changedFields.push('nose');
+          }
+          if (lower.includes('scar') || lower.includes('mark')) {
+            updatedFacialState.scars_marks_tattoos = 'Vertical scar above right eyebrow AND distinct knife scar on left cheek';
+            changedFields.push('scars_marks_tattoos');
+          }
+          if (lower.includes('beard') || lower.includes('mustache') || lower.includes('stubble')) {
+            updatedFacialState.facial_hair = lower.includes('clean')
+              ? 'Clean-shaven lower face with visible bone contours'
+              : 'Heavy dark 5 o-clock stubble with faint mustache contour';
+            changedFields.push('facial_hair');
           }
         }
-        if (lower.includes('nose')) {
-          updatedFacialState.nose = lower.includes('hook') || lower.includes('crook')
-            ? 'Crooked bridge with slight hooked downward tip'
-            : 'Straight narrow aquiline nose bridge';
-          changedFields.push('nose');
+
+        if (changedFields.length === 0) {
+          changedFields.push('jawline_chin', 'eyes');
         }
-        if (lower.includes('scar') || lower.includes('mark')) {
-          updatedFacialState.scars_marks_tattoos = 'Vertical scar above right eyebrow AND distinct knife scar on left cheek';
-          changedFields.push('scars_marks_tattoos');
-        }
-        if (lower.includes('beard') || lower.includes('mustache') || lower.includes('stubble')) {
-          updatedFacialState.facial_hair = lower.includes('clean')
-            ? 'Clean-shaven lower face with visible bone contours'
-            : 'Heavy dark 5 o-clock stubble with faint mustache contour';
-          changedFields.push('facial_hair');
-        }
-      }
 
-      if (changedFields.length === 0) {
-        changedFields.push('jawline_chin', 'eyes');
-      }
+        const nextIterationNumber = iterations.length + 1;
+        const nextIterationId = `iter-${nextIterationNumber}`;
 
-      const nextIterationNumber = iterations.length + 1;
-      const nextIterationId = `iter-${nextIterationNumber}`;
+        const newImageUrl = generateForensicSketchDataUrl(
+          updatedFacialState,
+          renderStyle,
+          caseFile.case_seed,
+          nextIterationNumber
+        );
 
-      const newImageUrl = generateForensicSketchDataUrl(
-        updatedFacialState,
-        renderStyle,
-        caseFile.case_seed,
-        nextIterationNumber
-      );
+        const fallbackIteration: SketchIteration = {
+          id: nextIterationId,
+          case_id: caseFile.id,
+          iteration_number: nextIterationNumber,
+          parent_iteration_id: currentIteration.id,
+          image_url: newImageUrl,
+          witness_prompt: text,
+          witness_likeness_score: Math.min(9.8, parseFloat((currentIteration.witness_likeness_score + 0.6).toFixed(1))),
+          ai_provider: 'local-procedural',
+          latency_ms: Math.floor(Math.random() * 800) + 2100,
+          created_at: new Date().toISOString(),
+          facial_state: updatedFacialState,
+          changed_fields: changedFields,
+          confidence_rating: confidence === 'not_sure' ? 'maybe' : confidence,
+        };
 
-      const newIteration: SketchIteration = {
-        id: nextIterationId,
-        case_id: caseFile.id,
-        iteration_number: nextIterationNumber,
-        parent_iteration_id: currentIteration.id,
-        image_url: newImageUrl,
-        witness_prompt: text,
-        witness_likeness_score: Math.min(9.8, parseFloat((currentIteration.witness_likeness_score + 0.6).toFixed(1))),
-        ai_provider: 'gemini-2.5-flash-image',
-        latency_ms: Math.floor(Math.random() * 800) + 2100,
-        created_at: new Date().toISOString(),
-        facial_state: updatedFacialState,
-        changed_fields: changedFields,
-        confidence_rating: confidence === 'not_sure' ? 'maybe' : confidence,
-      };
+        setIterations(prev => [...prev, fallbackIteration]);
+        setCurrentIterationId(nextIterationId);
 
-      setIterations(prev => [...prev, newIteration]);
-      setCurrentIterationId(nextIterationId);
+        // System notification message
+        const systemReply: ChatMessage = {
+          id: `sys-${Date.now()}`,
+          sender: 'system',
+          text: `Iteration #${nextIterationNumber} generated via local-procedural fallback. Identity locked. Updated anatomical regions: ${changedFields.join(', ')}.`,
+          timestamp: new Date().toISOString(),
+          changed_traits: changedFields,
+        };
+        setMessages(prev => [...prev, systemReply]);
 
-      // System notification message
-      const systemReply: ChatMessage = {
-        id: `sys-${Date.now()}`,
-        sender: 'system',
-        text: `Iteration #${nextIterationNumber} generated. Identity locked. Updated anatomical regions: ${changedFields.join(', ')}.`,
-        timestamp: new Date().toISOString(),
-        changed_traits: changedFields,
-      };
-      setMessages(prev => [...prev, systemReply]);
+        // Audit event
+        onLogAuditEvent('REFINED_FACIAL_FEATURE', `Iteration #${nextIterationNumber}`, {
+          parent_iteration: currentIteration.id,
+          witness_prompt: text,
+          changed_fields: changedFields,
+          confidence,
+          provider: 'local-procedural',
+        });
 
-      // Audit event
-      onLogAuditEvent('REFINED_FACIAL_FEATURE', `Iteration #${nextIterationNumber}`, {
-        parent_iteration: currentIteration.id,
-        witness_prompt: text,
-        changed_fields: changedFields,
-        confidence,
-        provider: 'gemini-2.5-flash-image',
+        setIsLoading(false);
       });
-
-      setIsLoading(false);
-    }, 1200);
   };
 
   // Update Likeness rating
