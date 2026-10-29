@@ -15,7 +15,7 @@ logger = logging.getLogger("forensic_overlays")
 
 # Normalized facial region bounding boxes (x1, y1, x2, y2) on a 1024x1024 frontal portrait
 FACIAL_REGION_BOUNDING_BOXES: Dict[str, List[Tuple[float, float, float, float]]] = {
-    "hair_style_texture": [(0.12, 0.00, 0.88, 0.34)],
+    "hair_style_texture": [(0.20, 0.02, 0.80, 0.32)],
     "accessories_hat": [(0.12, 0.00, 0.88, 0.34)],
     "forehead": [(0.22, 0.14, 0.78, 0.32)],
     "eyebrows": [(0.20, 0.26, 0.80, 0.38)],
@@ -125,11 +125,15 @@ def get_bounding_boxes_for_traits(traits: List[str]) -> List[Tuple[float, float,
     return boxes
 
 
-def align_and_histogram_match_face(prev_pil: Image.Image, new_pil: Image.Image) -> Image.Image:
+def align_and_histogram_match_face(prev_pil: Image.Image, new_pil: Image.Image) -> Tuple[Image.Image, bool]:
     """
     Aligns new_pil to prev_pil using OpenCV Haar Cascade face detection.
     Matches the scale, position, and grayscale luminance/contrast histogram.
+    Returns (aligned_pil, alignment_succeeded) where alignment_succeeded is True
+    ONLY if a valid frontal face was detected in both images with scale between 0.88 and 1.12
+    and center shift < 45px.
     """
+    alignment_succeeded = False
     try:
         prev_cv = cv2.cvtColor(np.array(prev_pil), cv2.COLOR_RGB2BGR)
         new_cv = cv2.cvtColor(np.array(new_pil), cv2.COLOR_RGB2BGR)
@@ -159,10 +163,16 @@ def align_and_histogram_match_face(prev_pil: Image.Image, new_pil: Image.Image) 
                 cx_n, cy_n = xn + wn / 2.0, yn + hn / 2.0
 
                 scale = float(wp) / float(wn) if wn > 0 else 1.0
-                scale = float(np.clip(scale, 0.75, 1.35))
+                shift_x = abs(cx_p - cx_n)
+                shift_y = abs(cy_p - cy_n)
+
+                if 0.88 <= scale <= 1.12 and shift_x < 45.0 and shift_y < 45.0:
+                    alignment_succeeded = True
+
+                scale_clamped = float(np.clip(scale, 0.75, 1.35))
 
                 # Affine transform around new face center
-                M = cv2.getRotationMatrix2D((cx_n, cy_n), 0, scale)
+                M = cv2.getRotationMatrix2D((cx_n, cy_n), 0, scale_clamped)
                 M[0, 2] += (cx_p - cx_n)
                 M[1, 2] += (cy_p - cy_n)
 
@@ -175,7 +185,7 @@ def align_and_histogram_match_face(prev_pil: Image.Image, new_pil: Image.Image) 
                     borderValue=(245, 245, 245),
                 )
                 logger.info(
-                    f"[ForensicOverlays] Aligned face scale={scale:.3f}, shift=({cx_p - cx_n:.1f}, {cy_p - cy_n:.1f})"
+                    f"[ForensicOverlays] Aligned face scale={scale:.3f}, shift=({cx_p - cx_n:.1f}, {cy_p - cy_n:.1f}), success={alignment_succeeded}"
                 )
 
         # Match luminance and contrast histogram (mean and standard deviation)
@@ -196,10 +206,10 @@ def align_and_histogram_match_face(prev_pil: Image.Image, new_pil: Image.Image) 
             aligned_cv = matched
 
         aligned_pil = Image.fromarray(cv2.cvtColor(aligned_cv, cv2.COLOR_BGR2RGB))
-        return aligned_pil
+        return aligned_pil, alignment_succeeded
     except Exception as e:
         logger.warning(f"[ForensicOverlays] Alignment failed with error {e}, using original image: {e}")
-        return new_pil
+        return new_pil, False
 
 
 def compute_unmasked_ssim(
@@ -273,9 +283,17 @@ def apply_surgical_region_lock(
     has_age_gender = any(t in ("age_gender_ethnicity", "gender", "age") for t in changed_traits)
 
     # 1. Align new image to previous image
-    aligned_new_img = align_and_histogram_match_face(prev_img, new_img)
+    aligned_new_img, alignment_succeeded = align_and_histogram_match_face(prev_img, new_img)
 
-    # 2. Build feathered anatomical mask
+    # If face alignment criteria failed or faces shifted heavily, do NOT composite a patch
+    # Returning new_img directly as a clean, full coherent portrait guarantees zero double faces or ghosted seams
+    if not alignment_succeeded:
+        logger.info(
+            "[ForensicOverlays] Face alignment criteria not met; returning full coherent new portrait without overlay"
+        )
+        return new_img
+
+    # 2. Build elliptical/oval anatomical mask with 100% opaque center
     mask = Image.new("L", (w, h), 0)
     draw = ImageDraw.Draw(mask)
 
@@ -289,27 +307,28 @@ def apply_surgical_region_lock(
         py1 = int(np.clip(y1 * h, 0, h))
         px2 = int(np.clip(x2 * w, 0, w))
         py2 = int(np.clip(y2 * h, 0, h))
-        draw.rounded_rectangle([px1, py1, px2, py2], radius=32, fill=255)
+        draw.ellipse([px1, py1, px2, py2], fill=255)
 
-    # Apply wide Gaussian feather so there are zero visible seams
-    feathered_mask = mask.filter(ImageFilter.GaussianBlur(radius=28))
+    # Tight edge feathering (radius=12) so modified feature completely replaces old feature at 100% opacity in center
+    tight_feathered_mask = mask.filter(ImageFilter.GaussianBlur(radius=12))
 
     # 3. Compute SSIM outside mask to check identity retention
-    unmasked_ssim = compute_unmasked_ssim(prev_img, aligned_new_img, feathered_mask)
+    unmasked_ssim = compute_unmasked_ssim(prev_img, aligned_new_img, tight_feathered_mask)
     logger.info(
-        f"[ForensicOverlays] Surgical region lock applied for traits {changed_traits}. "
+        f"[ForensicOverlays] Surgical region lock check for traits {changed_traits}. "
         f"Unmasked structural fidelity (SSIM): {unmasked_ssim:.4f}"
     )
 
-    if unmasked_ssim < 0.72:
-        logger.warning(
-            f"[ForensicOverlays] Low unmasked SSIM ({unmasked_ssim:.4f} < 0.72) detected; "
-            f"blending with gentle opacity (alpha=0.55) strictly inside tight anatomical mask to prevent Frankenstein seam"
+    # If unmasked SSIM < 0.82, surrounding face shifted significantly: return new_img directly
+    if unmasked_ssim < 0.82:
+        logger.info(
+            f"[ForensicOverlays] Unmasked SSIM ({unmasked_ssim:.4f} < 0.82) indicates significant structural shift; "
+            f"returning full coherent new portrait to prevent double-exposure ghosting"
         )
-        feathered_mask = feathered_mask.point(lambda p: int(p * 0.55))
+        return new_img
 
-    # 4. Composite the result: aligned_new_img inside mask, prev_img outside mask
-    locked_composite = Image.composite(aligned_new_img, prev_img, feathered_mask)
+    # 4. Composite result: 100% opaque replacement of modified feature with seamless edge feather
+    locked_composite = Image.composite(aligned_new_img, prev_img, tight_feathered_mask)
     return locked_composite
 
 

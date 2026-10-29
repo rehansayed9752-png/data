@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from config import settings
-from db.database import init_db
+from db.database import init_db, DATABASE_URL
 from routers import audit, cases, officers, sketches, system
 from services.gemini_key_pool import key_pool
 
@@ -58,7 +58,11 @@ async def health_check():
     return {
         "status": "healthy",
         "service": settings.PROJECT_NAME,
-        "database": "connected",
+        "database": {
+            "status": "connected",
+            "engine": "postgresql/supabase" if "postgresql" in DATABASE_URL else "sqlite",
+            "target": DATABASE_URL.split("@")[-1].split("/")[0] if "@" in DATABASE_URL else "local_file",
+        },
         "gemini_cluster": {
             "status": pool_status["cluster_status"],
             "total_keys": pool_status["total_keys"],
