@@ -26,6 +26,7 @@ import {
   PermissionMode,
 } from '../../types/forensic';
 import { generateForensicSketchDataUrl } from '../../utils/proceduralSketch';
+import { ForensicScanOverlay } from '../ui/ForensicAnimations';
 
 interface CompositeStudioModuleProps {
   caseFile: CaseFile;
@@ -595,62 +596,83 @@ export const CompositeStudioModule: React.FC<CompositeStudioModuleProps> = ({
                 transition: 'transform 0.15s ease-out',
               }}
             >
-              {/* Single Image View */}
-              {!isCompareMode && (
-                <img
-                  src={currentIteration.image_url}
-                  alt={`Suspect composite iteration ${currentIteration.iteration_number}`}
-                  className="max-w-full max-h-full object-contain filter contrast-[1.06] select-none"
-                  draggable={false}
-                />
-              )}
-
-              {/* Compare Split View */}
-              {isCompareMode && previousIteration && (
-                <div className="relative w-full h-full overflow-hidden select-none">
-                  {/* Before (Previous) */}
-                  <img
-                    src={previousIteration.image_url}
-                    alt="Previous Iteration"
-                    className="absolute inset-0 w-full h-full object-contain filter contrast-[1.06] select-none"
-                    draggable={false}
-                  />
-
-                  {/* After (Current) */}
-                  <div
-                    className="absolute inset-0 overflow-hidden"
-                    style={{ clipPath: `inset(0 0 0 ${compareSplit}%)` }}
-                  >
+              {/* Silhouette Placeholder when no image exists */}
+              {!currentIteration.image_url ? (
+                <div className="flex flex-col items-center justify-center text-[#71717A] select-none p-8">
+                  <svg viewBox="0 0 100 120" className="h-44 w-36 stroke-[#71717A] fill-[#27272A]/5" strokeWidth="1.5">
+                    <path d="M25,35 C25,14 75,14 75,35 C75,62 68,85 50,98 C32,85 25,62 25,35 Z" />
+                    <line x1="26" y1="48" x2="74" y2="48" strokeDasharray="2 2" className="stroke-[#71717A]/40" />
+                    <line x1="50" y1="18" x2="50" y2="96" strokeDasharray="2 2" className="stroke-[#71717A]/40" />
+                  </svg>
+                  <p className="mt-3 font-mono text-[11px] uppercase tracking-wider text-[#71717A]">
+                    Awaiting Biometric Synthesis
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Single Image View */}
+                  {!isCompareMode && (
                     <img
                       src={currentIteration.image_url}
-                      alt="Current Iteration"
-                      className="absolute inset-0 w-full h-full object-contain filter contrast-[1.06] select-none"
+                      alt={`Suspect composite iteration ${currentIteration.iteration_number}`}
+                      className={`max-w-full max-h-full object-contain filter contrast-[1.06] select-none transition-all duration-300 ${
+                        isLoading ? 'opacity-60 blur-[1px]' : 'opacity-100'
+                      }`}
                       draggable={false}
                     />
-                  </div>
+                  )}
 
-                  {/* Divider Line */}
-                  <div
-                    className="absolute top-0 bottom-0 w-0.5 bg-[#18181B] cursor-ew-resize z-20"
-                    style={{ left: `${compareSplit}%` }}
-                    onMouseDown={() => setIsDraggingSplit(true)}
-                  >
-                    <div className="absolute top-1/2 -translate-y-1/2 -left-3 w-6 h-6 rounded-full bg-[#18181B] text-white flex items-center justify-center text-[10px] font-mono shadow-xs">
-                      ||
+                  {/* Compare Split View */}
+                  {isCompareMode && previousIteration && (
+                    <div className={`relative w-full h-full overflow-hidden select-none transition-all duration-300 ${isLoading ? 'opacity-60 blur-[1px]' : 'opacity-100'}`}>
+                      {/* Before (Previous) */}
+                      <img
+                        src={previousIteration.image_url}
+                        alt="Previous Iteration"
+                        className="absolute inset-0 w-full h-full object-contain filter contrast-[1.06] select-none"
+                        draggable={false}
+                      />
+
+                      {/* After (Current) */}
+                      <div
+                        className="absolute inset-0 overflow-hidden"
+                        style={{ clipPath: `inset(0 0 0 ${compareSplit}%)` }}
+                      >
+                        <img
+                          src={currentIteration.image_url}
+                          alt="Current Iteration"
+                          className="absolute inset-0 w-full h-full object-contain filter contrast-[1.06] select-none"
+                          draggable={false}
+                        />
+                      </div>
+
+                      {/* Divider Line */}
+                      <div
+                        className="absolute top-0 bottom-0 w-0.5 bg-[#18181B] cursor-ew-resize z-20"
+                        style={{ left: `${compareSplit}%` }}
+                        onMouseDown={() => setIsDraggingSplit(true)}
+                      >
+                        <div className="absolute top-1/2 -translate-y-1/2 -left-3 w-6 h-6 rounded-full bg-[#18181B] text-white flex items-center justify-center text-[10px] font-mono shadow-xs">
+                          ||
+                        </div>
+                      </div>
+
+                      <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-[#18181B] text-white font-mono text-[9px]">
+                        Iter {previousIteration.iteration_number}
+                      </div>
+                      <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-[#18181B] text-white font-mono text-[9px]">
+                        Iter {currentIteration.iteration_number}
+                      </div>
                     </div>
-                  </div>
-
-                  <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-[#18181B] text-white font-mono text-[9px]">
-                    Iter {previousIteration.iteration_number}
-                  </div>
-                  <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-[#18181B] text-white font-mono text-[9px]">
-                    Iter {currentIteration.iteration_number}
-                  </div>
-                </div>
+                  )}
+                </>
               )}
 
+              {/* Active Forensic Biometric Laser Scan HUD */}
+              <ForensicScanOverlay isGenerating={isLoading} />
+
               {/* Draggable Magnifying Loupe (2.5x circular lens) */}
-              {isLoupeActive && (
+              {isLoupeActive && !isLoading && (
                 <div
                   className="pointer-events-none absolute select-none z-30"
                   style={{
