@@ -98,7 +98,6 @@ class SketchGeneratorService:
                 return None
 
         models_to_try = [
-            "@cf/runwayml/stable-diffusion-v1-5-img2img" if init_image_b64 else settings.CF_IMAGE_MODEL,
             settings.CF_IMAGE_MODEL,
             "@cf/bytedance/stable-diffusion-xl-lightning",
             "@cf/stabilityai/stable-diffusion-xl-base-1.0",
@@ -124,7 +123,12 @@ class SketchGeneratorService:
                     "seed": int(seed) if seed is not None else 42190,
                 }
 
-                if init_image_b64:
+                if "flux" in model_id.lower():
+                    payload["steps"] = 6
+                elif steps:
+                    payload["steps"] = steps
+
+                if "img2img" in model_id.lower() and init_image_b64:
                     payload["init_image_b64"] = init_image_b64
                     payload["image"] = init_image_b64
                     payload["init_image"] = init_image_b64
@@ -261,14 +265,11 @@ class SketchGeneratorService:
         if raw_new_img is None and settings.CF_WORKER_URL and settings.CF_WORKER_API_KEYS:
             try:
                 cf_prompt = full_compiled_prompt
-                if delta_edit_instruction:
-                    cf_prompt = f"{full_compiled_prompt} Refinement: {delta_edit_instruction}."
-
                 raw_bytes = await SketchGeneratorService._call_cloudflare_worker(
                     prompt=cf_prompt,
                     seed=case_seed,
                     init_image_b64=init_image_b64,
-                    steps=4,
+                    steps=6,
                 )
                 if raw_bytes:
                     raw_new_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
@@ -332,7 +333,10 @@ class SketchGeneratorService:
             provider_used = "local-procedural-sketch-fallback"
 
         # LAYER 3 & 4: Surgical Region Mask Compositing (100% Pixel-Identity Lock)
-        if prev_img is not None:
+        # Apply surgical region lock only for true in-place edits (Gemini multimodal img2img).
+        # For full text-to-image regenerations (FLUX / Pollinations), raw_new_img is a coherent
+        # single portrait and should NOT be overlaid onto prev_img to prevent double-face ghosting.
+        if prev_img is not None and provider_used.startswith("gemini-img2img"):
             final_img = apply_surgical_region_lock(
                 prev_img=prev_img,
                 new_img=raw_new_img,
@@ -367,24 +371,25 @@ class SketchGeneratorService:
 
         prev_bytes = Path(base_image_path).read_bytes()
 
-        # Define 3 distinct variation prompts with locked seed offsets
+        clean_trait = uncertain_trait.replace("_", " ")
+        # Define 3 distinct variation prompts with locked seed offsets using plain visual descriptors
         variation_specs = [
             (
                 "A",
-                f"Alternative Hypothesis A: Modify the {uncertain_trait} to be slightly squarer, wider, and more pronounced bone ridge.",
-                "Subtle squarer mandibular angle and wider chin",
+                f"wider square {clean_trait} with broader jawline contour",
+                "Wider square jawline and broader chin",
                 case_seed + 10,
             ),
             (
                 "B",
-                f"Alternative Hypothesis B: Modify the {uncertain_trait} to be slightly narrower, tapered, and softly contoured.",
-                "Subtle narrower tapered contour with softened chin",
+                f"narrower tapered {clean_trait} with softened chin contour",
+                "Narrower tapered chin and softened contour",
                 case_seed + 20,
             ),
             (
                 "C",
-                f"Alternative Hypothesis C: Modify the {uncertain_trait} to have a distinct cleft indentation and defined edge.",
-                "Subtle cleft indentation and sharp angular gonial angle",
+                f"defined {clean_trait} with subtle cleft indentation",
+                "Defined chin with subtle cleft indentation",
                 case_seed + 30,
             ),
         ]
@@ -401,18 +406,20 @@ class SketchGeneratorService:
             # 1. Try Cloudflare Worker first
             if settings.CF_WORKER_URL and settings.CF_WORKER_API_KEYS:
                 try:
-                    cf_var_prompt = f"Portrait sketch variation: {edit_instruction} ({desc}). Solid plain white background."
-                    init_image_b64 = base64.b64encode(prev_bytes).decode("utf-8")
+                    cf_var_prompt = (
+                        f"Single centered front-facing head-and-shoulders portrait drawing of one person in soft graphite pencil. "
+                        f"Subject features {edit_instruction}. Neutral expression, looking directly at the camera, "
+                        f"completely blank white background, no text, no labels, no borders, no diagram lines."
+                    )
                     raw_bytes = await SketchGeneratorService._call_cloudflare_worker(
                         prompt=cf_var_prompt,
                         seed=var_seed,
-                        init_image_b64=init_image_b64,
-                        steps=4,
+                        init_image_b64=None,
+                        steps=6,
                     )
                     if raw_bytes:
                         raw_v = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
-                        locked_v = apply_surgical_region_lock(base_pil, raw_v, [uncertain_trait])
-                        locked_v = _apply_forensic_post_filter(locked_v, render_style)
+                        locked_v = _apply_forensic_post_filter(raw_v, render_style)
                         locked_v.save(output_path, format="PNG")
                         return {
                             "label": label,
@@ -429,9 +436,9 @@ class SketchGeneratorService:
                     contents = [
                         types.Part.from_bytes(data=prev_bytes, mime_type="image/png"),
                         (
-                            f"You are a police forensic sketch artist providing alternative memory hypotheses. "
-                            f"{edit_instruction} "
-                            f"CRITICAL: Keep all other facial regions, pose, lighting, and identity identical to the input sketch."
+                            f"Modify only the {clean_trait} to be {edit_instruction}. "
+                            "Keep the exact same person, face proportions, and blank background. "
+                            "No text, no labels, no diagram lines."
                         ),
                     ]
 

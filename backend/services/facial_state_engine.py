@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any, List, Optional
 
 from google import genai
@@ -12,18 +13,21 @@ logger = logging.getLogger("facial_state_engine")
 
 RENDER_STYLE_INTELLIGENCE = {
     "forensic_graphite": (
-        "Close-up frontal portrait drawing of one civilian person, hand-drawn with soft 2B graphite pencil "
-        "on a completely blank, solid pure white paper background. "
-        "Clean natural pencil shading, neutral expression, looking straight at viewer, head and shoulders only, "
-        "plain empty white background."
+        "Single centered front-facing head-and-shoulders portrait drawing of one person, "
+        "hand-drawn with soft 2B graphite pencil on completely blank pure white paper, "
+        "smooth natural pencil shading, neutral expression, looking directly at the camera, "
+        "plain empty white background"
     ),
     "charcoal_shaded": (
-        "Close-up frontal portrait drawing of one civilian person, hand-drawn in matte charcoal pencil "
-        "on a completely blank, solid off-white paper background, soft natural shading, empty background."
+        "Single centered front-facing head-and-shoulders portrait drawing of one person, "
+        "hand-drawn in matte charcoal pencil on completely blank off-white paper, "
+        "soft natural charcoal shading, neutral expression, looking directly at the camera, "
+        "plain empty background"
     ),
     "photorealistic_id": (
-        "Close-up frontal studio portrait photograph of one civilian person against a plain, solid light grey wall, "
-        "natural even studio lighting, neutral expression."
+        "Single centered front-facing studio ID portrait photograph of one person against "
+        "a plain solid light grey background, even natural lighting, neutral expression, "
+        "looking directly at the camera"
     ),
 }
 
@@ -77,11 +81,15 @@ def _rule_based_state_update(
         "age_gender_ethnicity": ["male", "female", "man", "woman", "boy", "girl", "years old", "in his", "in her", "south asian", "caucasian", "african", "asian", "latino"],
     }
 
+    clean_witness = combined_input.split(" | Selected anatomical traits:")[0].strip()
+    clean_witness = re.sub(r"[:|()\[\]]", " ", clean_witness).strip()
+    clean_witness = " ".join(clean_witness.split())
+
     for region, keywords in keyword_map.items():
         matched = [k for k in keywords if k in lowered]
         if matched:
             changed.append(region)
-            state_dict[region] = combined_input.strip()
+            state_dict[region] = ", ".join(matched)
             badge_name = region.replace("_", " ").title()
             xai_badges.append(f"{badge_name} Refinement")
 
@@ -91,19 +99,19 @@ def _rule_based_state_update(
         state_dict["eyes"] = "Neutral gaze almond eyes"
         state_dict["nose"] = "Proportionate straight nose"
         state_dict["jawline_chin"] = "Natural defined jawline"
-        xai_badges = ["Craniofacial Proportions Base", "Orbital Positioning Base"]
+        xai_badges = ["Facial Proportions Base", "Eye Positioning Base"]
     elif not changed and not is_initial:
         # Refinement fallback if keywords didn't hit: map to jawline/facial_hair or nose as general adjustment
         changed = ["jawline_chin"]
-        state_dict["jawline_chin"] = combined_input.strip()[:80]
+        state_dict["jawline_chin"] = clean_witness[:80] if clean_witness else "Refined jawline contour"
         xai_badges = ["Facial Contour Precision Tuning"]
 
-    delta = f"Modify traits: {', '.join(changed)}" if changed else "Refine facial composite based on description"
+    delta = f"Modify traits {', '.join(changed)}" if changed else "Refine facial composite based on description"
     return StateCompilationResult(
         updated_state=FacialStateJSON(**state_dict),
         changed_traits=list(set(changed)),
         delta_edit_instruction=delta,
-        english_translation=combined_input,
+        english_translation=clean_witness or combined_input,
         xai_explanations=xai_badges or ["Facial Landmark Recalibration"],
         contradiction_warning=contradiction,
         is_safe_request=is_safe,
@@ -142,9 +150,13 @@ async def compile_facial_state(
         "4. Surgical Anatomical Update: Update ONLY the specific anatomical regions mentioned. "
         "Preserve every other field in FacialStateJSON verbatim to prevent identity drift.\n"
         "5. Populate 'changed_traits' with the modified keys (e.g. ['jawline_chin', 'eyes']).\n"
-        "6. Write 'delta_edit_instruction' as a concise imperative command for the image generator.\n"
+        "6. Write all 'updated_state' field values and 'delta_edit_instruction' using simple, everyday visual portrait terms "
+        "(e.g. 'square jawline', 'wide nose', 'thick arched eyebrows'). "
+        "NEVER use clinical or medical anatomy words (such as 'mandibular', 'gonial', 'orbital', 'interpupillary', 'nasolabial', "
+        "'craniofacial', or 'temporal'), colons, pipes, or bullet lists inside 'updated_state' or 'delta_edit_instruction', "
+        "as those cause diffusion models to render medical diagrams and text labels.\n"
         "7. Generate Explainable AI quantitative badges in 'xai_explanations' showing directional change "
-        "(e.g. ['Eyebrow Density +35%', 'Jawline Taper +20%', 'Interpupillary Distance +10%'])."
+        "(e.g. ['Eyebrow Density +35%', 'Jawline Taper +20%'])."
     )
 
     user_content = (
@@ -209,7 +221,7 @@ async def compile_facial_state(
 def build_full_diffusion_prompt(state: FacialStateJSON, render_style: RenderStyle = "forensic_graphite") -> str:
     """
     Outputs a single clean, natural sentence with ZERO colons (:), ZERO pipes (|),
-    and ZERO 'No ...' negative phrases so FLUX never draws anatomy callouts, text, or hats.
+    and ZERO 'No ...' negative phrases so FLUX never draws anatomy callouts, text, or diagrams.
     """
     style_prefix = RENDER_STYLE_INTELLIGENCE.get(render_style, RENDER_STYLE_INTELLIGENCE["forensic_graphite"])
 
@@ -232,11 +244,13 @@ def build_full_diffusion_prompt(state: FacialStateJSON, render_style: RenderStyl
     for val in ordered_values:
         if not val:
             continue
-        cleaned = val.strip().rstrip(".")
+        cleaned = re.sub(r"[:|()\[\]]", " ", val).strip().rstrip(".")
+        cleaned = " ".join(cleaned.split())
         low = cleaned.lower()
         if any(low.startswith(p) for p in SKIP_DEFAULT_PREFIXES):
             continue
-        descriptive_parts.append(cleaned)
+        if cleaned:
+            descriptive_parts.append(cleaned)
 
     person_desc = ", ".join(descriptive_parts) if descriptive_parts else "adult male with balanced oval face and short dark hair"
-    return f"{style_prefix} Portrait of a {person_desc}. Solid plain white background."
+    return f"{style_prefix}. Subject features {person_desc}. Single head only, centered frontal view, completely blank white background, no text, no labels, no borders, no diagram lines."
