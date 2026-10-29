@@ -84,8 +84,40 @@ export const MainWorkspace: React.FC<MainWorkspaceProps> = ({
 
   const isReadOnly = permissionMode === 'read_only';
 
+  const fallbackIteration: SketchIteration = {
+    id: 'iter-init',
+    case_id: activeCase?.id || 'case-initial',
+    iteration_number: 1,
+    parent_iteration_id: null,
+    image_url: '',
+    witness_prompt: 'Initial witness statement',
+    facial_state: {
+      age_gender_ethnicity: 'Adult male, approximately 30-35 years old',
+      head_face_shape: 'Balanced oval face shape',
+      hair_style_texture: 'Short neat dark hair',
+      forehead: 'Medium height smooth forehead',
+      eyebrows: 'Natural medium-thickness eyebrows',
+      eyes: 'Standard almond-shaped eyes, neutral gaze',
+      nose: 'Straight medium-width nose',
+      cheeks: 'Natural medium cheekbones',
+      jawline_chin: 'Moderate tapered jawline and rounded chin',
+      mouth_lips: 'Medium balanced lips, neutral expression',
+      ears: 'Normal proportioned ears close to head',
+      facial_hair: 'Clean-shaven',
+      scars_marks_tattoos: 'No visible scars, moles, or tattoos',
+      accessories: 'No glasses, hats, or jewelry',
+    },
+    changed_fields: [],
+    confidence_rating: 'likely',
+    created_at: new Date().toISOString(),
+    witness_likeness_score: 5,
+    latency_ms: 0,
+    ai_provider: 'local-procedural',
+  };
+
   const currentIteration =
-    iterations.find(it => it.id === currentIterationId) || iterations[iterations.length - 1];
+    iterations.find(it => it.id === currentIterationId) ||
+    (iterations.length > 0 ? iterations[iterations.length - 1] : fallbackIteration);
   const currentIdx = iterations.findIndex(it => it.id === currentIteration.id);
   const previousIteration = currentIdx > 0 ? iterations[currentIdx - 1] : null;
 

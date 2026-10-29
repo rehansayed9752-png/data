@@ -1,5 +1,6 @@
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter
+
 
 def export_high_resolution_sketch(
     source_image_path: str,
@@ -24,7 +25,7 @@ def export_high_resolution_sketch(
     canvas = Image.new("RGB", (2048, 2168), color=(15, 23, 42))
     canvas.paste(upscaled, (0, 0))
     draw = ImageDraw.Draw(canvas)
-    
+
     footer_text = (
         f"OFFICIAL FORENSIC COMPOSITE | CASE: {case_number} | ITERATION #{iteration_number} | "
         f"OFFICER BADGE: {officer_badge} | SHA-256 AUDIT: {audit_hash_prefix[:16]}... | RES: 2048x2048px"
@@ -33,5 +34,6 @@ def export_high_resolution_sketch(
     draw.text((48, 2092), footer_text, fill=(226, 232, 240))
 
     high_res_path = src.with_name(f"{src.stem}_HIGHRES_2048.png")
+    high_res_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(high_res_path, format="PNG", optimize=True)
     return str(high_res_path)

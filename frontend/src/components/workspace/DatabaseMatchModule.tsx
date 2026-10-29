@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Search, UserCheck, Shield, ExternalLink, Check, AlertCircle } from 'lucide-react';
 import { CaseFile, SketchIteration, MugshotRecord, PermissionMode } from '../../types/forensic';
 import { MUGSHOT_DATABASE } from '../../data/mockForensicData';
+import { apiClient } from '../../api/client';
 
 interface DatabaseMatchModuleProps {
   caseFile: CaseFile;
@@ -32,9 +33,12 @@ export const DatabaseMatchModule: React.FC<DatabaseMatchModuleProps> = ({
 
   const handleRunSearch = () => {
     setIsSearching(true);
-    setTimeout(() => {
-      setIsSearching(false);
-    }, 800);
+    apiClient
+      .runMugshotMatch(caseFile.id, currentIteration.id)
+      .catch(() => {})
+      .finally(() => {
+        setIsSearching(false);
+      });
   };
 
   return (

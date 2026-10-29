@@ -6,9 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import AccessAuditLogModel, get_db
 from models.schemas import AuditLogItemSchema, VerifyAuditChainResponse
-from services.audit_service import GENESIS_HASH, compute_audit_hash, log_audit_event
+from services.audit_service import (
+    GENESIS_HASH,
+    compute_audit_hash,
+    format_canonical_iso,
+    log_audit_event,
+)
 
 router = APIRouter(prefix="/audit-logs", tags=["audit"])
+
 
 @router.get("", response_model=List[AuditLogItemSchema])
 async def get_audit_logs(
@@ -29,6 +35,7 @@ async def get_audit_logs(
     result = await db.execute(query)
     logs = result.scalars().all()
     return logs
+
 
 @router.get("/verify-chain", response_model=VerifyAuditChainResponse)
 async def verify_chain(
@@ -51,13 +58,13 @@ async def verify_chain(
         if row.prev_hash != expected_prev_hash:
             tampered_ids.append(row.seq_id)
 
-        # Recalculate row hash
+        # Recalculate row hash with canonical UTC ISO timestamp
         calc_hash = compute_audit_hash(
             prev_hash=row.prev_hash,
             officer_id=row.officer_id,
             case_id=row.case_id,
             action_type=row.action_type,
-            timestamp_iso=row.created_at.isoformat(),
+            timestamp_iso=format_canonical_iso(row.created_at),
             details=row.details_json,
         )
 

@@ -13,7 +13,7 @@ import { computeAuditRowHash } from '../utils/crypto';
 
 export const DEMO_OFFICERS: OfficerProfile[] = [
   {
-    officer_id: 'off-ka-4091',
+    officer_id: '11111111-1111-1111-1111-111111111111',
     badge_number: 'KA-4091',
     full_name: 'Det. Vikram Rao',
     rank: 'Detective Inspector',
@@ -22,7 +22,7 @@ export const DEMO_OFFICERS: OfficerProfile[] = [
     avatar_initials: 'VR',
   },
   {
-    officer_id: 'off-ka-1182',
+    officer_id: '22222222-2222-2222-2222-222222222222',
     badge_number: 'KA-1182',
     full_name: 'Analyst Priya Nair',
     rank: 'Senior Forensic Artist',
@@ -31,7 +31,7 @@ export const DEMO_OFFICERS: OfficerProfile[] = [
     avatar_initials: 'PN',
   },
   {
-    officer_id: 'off-ka-0045',
+    officer_id: '33333333-3333-3333-3333-333333333333',
     badge_number: 'KA-0045',
     full_name: 'Supt. Arjun Mehta',
     rank: 'Superintendent of Police',
@@ -54,7 +54,7 @@ export const INITIAL_CASES: CaseFile[] = [
     render_style: 'forensic_graphite',
     current_iteration_id: 'iter-3',
     status: 'active_interview',
-    lead_officer_id: 'off-ka-4091',
+    lead_officer_id: '11111111-1111-1111-1111-111111111111',
     created_at: '2026-10-28T09:15:00Z',
   },
   {
@@ -69,7 +69,7 @@ export const INITIAL_CASES: CaseFile[] = [
     render_style: 'charcoal_shaded',
     current_iteration_id: 'iter-c2-1',
     status: 'lead_flagged',
-    lead_officer_id: 'off-ka-1182',
+    lead_officer_id: '22222222-2222-2222-2222-222222222222',
     created_at: '2026-10-26T11:30:00Z',
   },
   {
@@ -84,7 +84,7 @@ export const INITIAL_CASES: CaseFile[] = [
     render_style: 'photorealistic_id',
     current_iteration_id: 'iter-c3-1',
     status: 'active_interview',
-    lead_officer_id: 'off-ka-0045',
+    lead_officer_id: '33333333-3333-3333-3333-333333333333',
     created_at: '2026-10-22T08:00:00Z',
   },
 ];
@@ -294,7 +294,7 @@ export function generateInitialAuditLog(): AuditLogEntry[] {
     {
       seq_id: 1,
       timestamp: '2026-10-28T09:15:00Z',
-      officer_id: 'off-ka-4091',
+      officer_id: '11111111-1111-1111-1111-111111111111',
       officer_name: 'Det. Vikram Rao',
       badge_number: 'KA-4091',
       officer_role: 'investigator',
@@ -307,7 +307,7 @@ export function generateInitialAuditLog(): AuditLogEntry[] {
     {
       seq_id: 2,
       timestamp: '2026-10-28T09:16:10Z',
-      officer_id: 'off-ka-4091',
+      officer_id: '11111111-1111-1111-1111-111111111111',
       officer_name: 'Det. Vikram Rao',
       badge_number: 'KA-4091',
       officer_role: 'investigator',
@@ -320,7 +320,7 @@ export function generateInitialAuditLog(): AuditLogEntry[] {
     {
       seq_id: 3,
       timestamp: '2026-10-28T09:22:15Z',
-      officer_id: 'off-ka-4091',
+      officer_id: '11111111-1111-1111-1111-111111111111',
       officer_name: 'Det. Vikram Rao',
       badge_number: 'KA-4091',
       officer_role: 'investigator',
@@ -338,7 +338,7 @@ export function generateInitialAuditLog(): AuditLogEntry[] {
     {
       seq_id: 4,
       timestamp: '2026-10-28T09:34:40Z',
-      officer_id: 'off-ka-4091',
+      officer_id: '11111111-1111-1111-1111-111111111111',
       officer_name: 'Det. Vikram Rao',
       badge_number: 'KA-4091',
       officer_role: 'investigator',
@@ -355,7 +355,7 @@ export function generateInitialAuditLog(): AuditLogEntry[] {
     {
       seq_id: 5,
       timestamp: '2026-10-28T09:48:10Z',
-      officer_id: 'off-ka-4091',
+      officer_id: '11111111-1111-1111-1111-111111111111',
       officer_name: 'Det. Vikram Rao',
       badge_number: 'KA-4091',
       officer_role: 'investigator',
@@ -372,7 +372,7 @@ export function generateInitialAuditLog(): AuditLogEntry[] {
     {
       seq_id: 6,
       timestamp: '2026-10-28T09:50:00Z',
-      officer_id: 'off-ka-4091',
+      officer_id: '11111111-1111-1111-1111-111111111111',
       officer_name: 'Det. Vikram Rao',
       badge_number: 'KA-4091',
       officer_role: 'investigator',
@@ -385,7 +385,7 @@ export function generateInitialAuditLog(): AuditLogEntry[] {
     {
       seq_id: 7,
       timestamp: '2026-10-28T09:52:15Z',
-      officer_id: 'off-ka-4091',
+      officer_id: '11111111-1111-1111-1111-111111111111',
       officer_name: 'Det. Vikram Rao',
       badge_number: 'KA-4091',
       officer_role: 'investigator',
@@ -402,7 +402,7 @@ export function generateInitialAuditLog(): AuditLogEntry[] {
     {
       seq_id: 8,
       timestamp: '2026-10-28T09:53:30Z',
-      officer_id: 'off-ka-4091',
+      officer_id: '11111111-1111-1111-1111-111111111111',
       officer_name: 'Det. Vikram Rao',
       badge_number: 'KA-4091',
       officer_role: 'investigator',
@@ -420,7 +420,7 @@ export function generateInitialAuditLog(): AuditLogEntry[] {
     {
       seq_id: 9,
       timestamp: '2026-10-28T10:05:00Z',
-      officer_id: 'off-ka-1182',
+      officer_id: '22222222-2222-2222-2222-222222222222',
       officer_name: 'Analyst Priya Nair',
       badge_number: 'KA-1182',
       officer_role: 'forensic_specialist',

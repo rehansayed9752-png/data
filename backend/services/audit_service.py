@@ -12,6 +12,16 @@ logger = logging.getLogger("forensic_ai.audit")
 
 GENESIS_HASH = "0" * 64
 
+
+def format_canonical_iso(dt: datetime) -> str:
+    """Returns canonical UTC ISO-8601 string across all SQL dialects (PostgreSQL/SQLite)."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat()
+
+
 def compute_audit_hash(
     prev_hash: str,
     officer_id: str,
@@ -23,6 +33,7 @@ def compute_audit_hash(
     canonical_details = json.dumps(details, sort_keys=True, separators=(",", ":"))
     payload = f"{prev_hash}|{officer_id}|{case_id or 'GLOBAL'}|{action_type}|{timestamp_iso}|{canonical_details}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
 
 async def log_audit_event(
     session: AsyncSession,
@@ -37,7 +48,7 @@ async def log_audit_event(
 ) -> AccessAuditLogModel:
     details = details or {}
     now = datetime.now(timezone.utc)
-    timestamp_iso = now.isoformat()
+    timestamp_iso = format_canonical_iso(now)
 
     # Get officer details
     officer_stmt = select(OfficerModel).where(OfficerModel.id == officer_id)
