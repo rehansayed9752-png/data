@@ -254,6 +254,7 @@ export const App: React.FC = () => {
         matched_attributes: suspect.matched_attributes,
       });
       triggerToast(`Lead attached to case: ${suspect.full_name} (${suspect.similarity_score}% match)`);
+      apiClient.flagSuspectLead(activeCase.id, suspect.id, "Witness similarity threshold reached").catch(() => {});
     }
   };
 
@@ -496,6 +497,7 @@ export const App: React.FC = () => {
     apiClient
       .createCase({
         title: newCase.title,
+        location: newCase.incident_location || (newCase as any).location,
         incident_location: newCase.incident_location,
         witness_alias: newCase.witness_alias,
         render_style: newCase.render_style,

@@ -194,3 +194,32 @@ class VerifyAuditChainResponse(BaseModel):
     latest_chain_hash: str
     tampered_seq_ids: List[int]
     verified_at: datetime
+
+
+class MugshotRecordSchema(BaseModel):
+    id: str
+    record_code: str
+    full_name: str
+    age: int
+    gender: str
+    height_cm: int
+    prior_offenses: List[str] = Field(default_factory=list)
+    last_known_area: str
+    image_url: str
+    matched_attributes: List[str] = Field(default_factory=list)
+    similarity_score: float = 0.85
+    is_flagged: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class MugshotMatchRequest(BaseModel):
+    iteration_id: str
+    officer_id: Optional[str] = None
+
+
+class FlagSuspectRequest(BaseModel):
+    suspect_id: str
+    reason: str = "Witness similarity match"
+    officer_id: Optional[str] = None

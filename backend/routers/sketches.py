@@ -30,6 +30,27 @@ from services.sketch_generator import SketchGeneratorService, generate_or_refine
 router = APIRouter(prefix="/cases/{case_id}/sketches", tags=["sketches"])
 
 
+async def _resolve_officer_id(db: AsyncSession, raw_id: Optional[str]) -> str:
+    """Robustly resolves officer ID by UUID or badge substring."""
+    if raw_id:
+        res = await db.execute(select(OfficerModel).where(OfficerModel.id == raw_id))
+        officer = res.scalar_one_or_none()
+        if officer:
+            return officer.id
+
+        clean_badge = raw_id.replace("off-", "").upper()
+        res = await db.execute(select(OfficerModel).where(OfficerModel.badge_number.ilike(f"%{clean_badge}%")))
+        officer = res.scalar_one_or_none()
+        if officer:
+            return officer.id
+
+    res = await db.execute(select(OfficerModel).limit(1))
+    officer = res.scalar_one_or_none()
+    if officer:
+        return officer.id
+    return "11111111-1111-1111-1111-111111111111"
+
+
 @router.post("/generate", response_model=SketchIterationSchema)
 async def generate_sketch(
     case_id: str,
@@ -41,7 +62,7 @@ async def generate_sketch(
     case_res = await db.execute(case_query)
     case = case_res.scalar_one_or_none()
     if not case:
-        lead_officer_id = sketch_req.officer_id or "11111111-1111-1111-1111-111111111111"
+        lead_officer_id = await _resolve_officer_id(db, sketch_req.officer_id)
         case = CaseModel(
             id=case_id,
             case_number=f"CASE-{case_id.upper()}",
@@ -58,7 +79,7 @@ async def generate_sketch(
         await db.commit()
         await db.refresh(case)
 
-    officer_id = sketch_req.officer_id or case.lead_officer_id
+    officer_id = await _resolve_officer_id(db, sketch_req.officer_id or case.lead_officer_id)
 
     # Count prior iterations
     iter_count_query = (
@@ -79,14 +100,18 @@ async def generate_sketch(
         if parent_iter:
             base_state = FacialStateJSON(**parent_iter.facial_state_snapshot)
             filename = Path(parent_iter.image_url).name
-            prev_image_path = str(settings.SKETCH_DIR / filename)
+            candidate_path = settings.SKETCH_DIR / filename
+            if candidate_path.exists():
+                prev_image_path = str(candidate_path)
         else:
             base_state = FacialStateJSON(**case.current_facial_state)
     elif all_iterations:
         latest = all_iterations[0]
         base_state = FacialStateJSON(**latest.facial_state_snapshot)
         filename = Path(latest.image_url).name
-        prev_image_path = str(settings.SKETCH_DIR / filename)
+        candidate_path = settings.SKETCH_DIR / filename
+        if candidate_path.exists():
+            prev_image_path = str(candidate_path)
     else:
         base_state = FacialStateJSON(**case.current_facial_state)
 
@@ -182,14 +207,10 @@ async def generate_variations(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Parallel Multi-Key Variations Generator (USP #3 & #10):
-    Dispatches concurrent requests across separate Google AI Studio keys in the pool.
-    """
     case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
     case = case_res.scalar_one_or_none()
     if not case:
-        lead_officer_id = var_req.officer_id or "11111111-1111-1111-1111-111111111111"
+        lead_officer_id = await _resolve_officer_id(db, var_req.officer_id)
         case = CaseModel(
             id=case_id,
             case_number=f"CASE-{case_id.upper()}",
@@ -216,17 +237,23 @@ async def generate_variations(
     if not iteration:
         raise HTTPException(status_code=404, detail="Iteration not found")
 
-    local_img_path = str(settings.SKETCH_DIR / Path(iteration.image_url).name)
+    local_img_path = settings.SKETCH_DIR / Path(iteration.image_url).name
+    if not local_img_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Base composite image not found on server disk: {local_img_path.name}",
+        )
+
     variations = await SketchGeneratorService.generate_three_variations(
         case_id=case.id,
         iteration_number=iteration.iteration_number,
         case_seed=case.case_seed,
-        base_image_path=local_img_path,
+        base_image_path=str(local_img_path),
         uncertain_trait=var_req.uncertain_trait,
         render_style=case.render_style,
     )
 
-    officer_id = var_req.officer_id or case.lead_officer_id
+    officer_id = await _resolve_officer_id(db, var_req.officer_id or case.lead_officer_id)
     await log_audit_event(
         session=db,
         officer_id=officer_id,
@@ -254,14 +281,10 @@ async def simulate_disguise(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Criminal Disguise Simulator (USP #12):
-    Applies non-destructive accessory overlay to composite sketch while locking facial bone structure.
-    """
     case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
     case = case_res.scalar_one_or_none()
     if not case:
-        lead_officer_id = disguise_req.officer_id or "11111111-1111-1111-1111-111111111111"
+        lead_officer_id = await _resolve_officer_id(db, disguise_req.officer_id)
         case = CaseModel(
             id=case_id,
             case_number=f"CASE-{case_id.upper()}",
@@ -288,18 +311,24 @@ async def simulate_disguise(
     if not iteration:
         raise HTTPException(status_code=404, detail="Iteration not found")
 
-    local_img_path = str(settings.SKETCH_DIR / Path(iteration.image_url).name)
+    local_img_path = settings.SKETCH_DIR / Path(iteration.image_url).name
+    if not local_img_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Base composite image not found on server disk: {local_img_path.name}",
+        )
+
     saved_path, provider, latency_ms = await SketchGeneratorService.simulate_disguise(
         case_id=case.id,
         iteration_number=iteration.iteration_number,
-        base_image_path=local_img_path,
+        base_image_path=str(local_img_path),
         case_seed=case.case_seed,
         disguise_type=disguise_req.disguise_type,
         render_style=case.render_style,
     )
 
     web_url = f"/static/sketches/{Path(saved_path).name}"
-    officer_id = disguise_req.officer_id or case.lead_officer_id
+    officer_id = await _resolve_officer_id(db, disguise_req.officer_id or case.lead_officer_id)
 
     await log_audit_event(
         session=db,
@@ -347,7 +376,7 @@ async def update_likeness(
     await db.commit()
     await db.refresh(iteration)
 
-    officer_id = likeness_req.officer_id or iteration.created_by_officer_id
+    officer_id = await _resolve_officer_id(db, likeness_req.officer_id or iteration.created_by_officer_id)
     await log_audit_event(
         session=db,
         officer_id=officer_id,
@@ -375,7 +404,7 @@ async def export_highres(
     case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
     case = case_res.scalar_one_or_none()
     if not case:
-        lead_officer_id = officer_id or "11111111-1111-1111-1111-111111111111"
+        lead_officer_id = await _resolve_officer_id(db, officer_id)
         case = CaseModel(
             id=case_id,
             case_number=f"CASE-{case_id.upper()}",
@@ -397,12 +426,17 @@ async def export_highres(
     if not iteration:
         raise HTTPException(status_code=404, detail="Iteration not found")
 
-    active_officer_id = officer_id or case.lead_officer_id
+    active_officer_id = await _resolve_officer_id(db, officer_id or case.lead_officer_id)
     officer_res = await db.execute(select(OfficerModel).where(OfficerModel.id == active_officer_id))
     officer = officer_res.scalar_one_or_none()
     officer_badge = officer.badge_number if officer else "KA-4091"
 
-    local_img_path = str(settings.SKETCH_DIR / Path(iteration.image_url).name)
+    local_img_path = settings.SKETCH_DIR / Path(iteration.image_url).name
+    if not local_img_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Source sketch image not found on server disk: {local_img_path.name}",
+        )
 
     audit_entry = await log_audit_event(
         session=db,
@@ -421,7 +455,7 @@ async def export_highres(
     )
 
     high_res_path = export_high_resolution_sketch(
-        source_image_path=local_img_path,
+        source_image_path=str(local_img_path),
         case_number=case.case_number,
         iteration_number=iteration.iteration_number,
         officer_badge=officer_badge,
