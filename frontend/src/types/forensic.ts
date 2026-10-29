@@ -19,6 +19,8 @@ export type RenderStyle = 'forensic_graphite' | 'charcoal_shaded' | 'photorealis
 
 export type OfficerRole = 'investigator' | 'forensic_specialist' | 'supervisor';
 
+export type PermissionMode = 'read_write' | 'read_only';
+
 export interface OfficerProfile {
   officer_id: string;
   badge_number: string;
@@ -59,6 +61,7 @@ export interface AuditLogEntry {
   prev_hash: string;
   row_hash: string;
   ip_address: string;
+  access_mode?: PermissionMode;
   details_json: Record<string, any>;
 }
 

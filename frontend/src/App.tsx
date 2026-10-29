@@ -1,14 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Header } from './components/layout/Header';
-import { SideDrawer } from './components/layout/SideDrawer';
-import { NewCaseModal } from './components/cases/NewCaseModal';
-import { CaseSwitcherModal } from './components/cases/CaseSwitcherModal';
-import { SketchStudio } from './components/studio/SketchStudio';
-import { InvestigationDashboard } from './components/dashboard/InvestigationDashboard';
-import { AuditLogView } from './components/audit/AuditLogView';
-import { MatchModal } from './components/matching/MatchModal';
+import { LoginPage } from './components/auth/LoginPage';
+import { MainWorkspace } from './components/layout/MainWorkspace';
 import {
   OfficerProfile,
+  PermissionMode,
   CaseFile,
   RenderStyle,
   SketchIteration,
@@ -16,6 +11,8 @@ import {
   AuditLogEntry,
   MugshotRecord,
   AuditActionType,
+  SupportedLanguage,
+  FacialStateJSON,
 } from './types/forensic';
 import {
   DEMO_OFFICERS,
@@ -25,35 +22,35 @@ import {
   MUGSHOT_DATABASE,
 } from './data/mockForensicData';
 import { computeAuditRowHash } from './utils/crypto';
-import { generateCourtDossierPdf, downloadHighResCompositePng } from './utils/exportDossier';
+import { generateCourtDossierPdf } from './utils/exportDossier';
+import { generateForensicSketchDataUrl } from './utils/proceduralSketch';
 import { apiClient } from './api/client';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'studio' | 'dashboard' | 'audit'>('studio');
-  const [currentOfficer, setCurrentOfficer] = useState<OfficerProfile>(DEMO_OFFICERS[0]);
+  // Authentication & Permission Session State
+  const [session, setSession] = useState<{
+    officer: OfficerProfile;
+    permissionMode: PermissionMode;
+  } | null>(() => {
+    try {
+      const stored = localStorage.getItem('fces_session');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return null;
+  });
+
   const [cases, setCases] = useState<CaseFile[]>(INITIAL_CASES);
   const [activeCase, setActiveCase] = useState<CaseFile>(INITIAL_CASES[0]);
   const [renderStyle, setRenderStyle] = useState<RenderStyle>('forensic_graphite');
-
-  // Modal and drawer visibility
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [isNewCaseModalOpen, setIsNewCaseModalOpen] = useState(false);
-  const [isCaseSwitcherOpen, setIsCaseSwitcherOpen] = useState(false);
-  const [canvasToolTrigger, setCanvasToolTrigger] = useState<{
-    tabMode?: 'canvas' | 'variations';
-    isCompareMode?: boolean;
-    showInspector?: boolean;
-    showDisguises?: boolean;
-  }>({});
-
   const [iterations, setIterations] = useState<SketchIteration[]>(INITIAL_ITERATIONS);
   const [currentIterationId, setCurrentIterationId] = useState<string>('iter-3');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'msg-init-1',
       sender: 'witness',
-      text: 'He was a male in his mid-30s, square jaw, thick bushy eyebrows, narrow almond eyes, crooked hooked nose, heavy stubble, and a scar over his right brow.',
+      text: 'He was a male in his mid-30s, square jaw, thick bushy eyebrows, narrow almond eyes, hooked nose, heavy stubble, and a scar over his right brow.',
       timestamp: '2026-10-28T09:21:40Z',
       confidence: 'likely',
       changed_traits: ['jawline_chin', 'eyebrows', 'eyes', 'nose', 'facial_hair', 'scars_marks_tattoos'],
@@ -96,16 +93,16 @@ export const App: React.FC = () => {
 
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => generateInitialAuditLog());
   const [isAuditVerified, setIsAuditVerified] = useState<boolean>(true);
-
   const [flaggedLeads, setFlaggedLeads] = useState<MugshotRecord[]>([MUGSHOT_DATABASE[0]]);
-  const [isMatchModalOpen, setIsMatchModalOpen] = useState(false);
-
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    setTimeout(() => setToastMessage(null), 3000);
   };
+
+  const currentOfficer = session?.officer || DEMO_OFFICERS[0];
+  const permissionMode = session?.permissionMode || 'read_write';
 
   // Helper to append a cryptographically chained audit log
   const handleLogAuditEvent = (
@@ -125,7 +122,7 @@ export const App: React.FC = () => {
         activeCase.id,
         actionType,
         timestamp,
-        details
+        { ...details, access_mode: permissionMode }
       );
 
       const newEntry: AuditLogEntry = {
@@ -141,11 +138,39 @@ export const App: React.FC = () => {
         prev_hash: prevHash,
         row_hash: rowHash,
         ip_address: '10.14.88.24 (HQ Intranet)',
-        details_json: details,
+        access_mode: permissionMode,
+        details_json: { ...details, access_mode: permissionMode },
       };
 
       return [...prev, newEntry];
     });
+  };
+
+  // Login handler
+  const handleLogin = (officer: OfficerProfile, mode: PermissionMode) => {
+    const newSession = { officer, permissionMode: mode };
+    setSession(newSession);
+    try {
+      localStorage.setItem('fces_session', JSON.stringify(newSession));
+    } catch {}
+
+    handleLogAuditEvent('USER_LOGIN', 'Authorized Terminal Access', {
+      permission_mode: mode,
+      officer_badge: officer.badge_number,
+      officer_rank: officer.rank,
+      department: officer.department,
+    });
+
+    triggerToast(`Terminal session initialized in ${mode === 'read_only' ? 'READ-ONLY' : 'READ & WRITE'} mode.`);
+  };
+
+  // Sign out handler
+  const handleSignOut = () => {
+    setSession(null);
+    try {
+      localStorage.removeItem('fces_session');
+    } catch {}
+    triggerToast('Session closed.');
   };
 
   // Cryptographic Chain Verification Engine (SHA-256)
@@ -184,8 +209,8 @@ export const App: React.FC = () => {
 
     triggerToast(
       isValid
-        ? 'Audit chain verified. Zero tampered entries detected.'
-        : 'Audit chain integrity failure detected!'
+        ? 'SHA-256 custody ledger verified. Zero altered records.'
+        : 'Integrity check failed: Tampered row detected!'
     );
 
     return isValid;
@@ -213,23 +238,14 @@ export const App: React.FC = () => {
     triggerToast('Official Court Dossier PDF downloaded.');
   };
 
-  // Export 2048px PNG
-  const handleExportPng = () => {
-    const latestHash = auditLogs.length > 0 ? auditLogs[auditLogs.length - 1].row_hash : '00000000';
-    downloadHighResCompositePng(currentIteration, activeCase, currentOfficer.badge_number, latestHash);
-    handleLogAuditEvent('EXPORTED_HIGH_RES_SKETCH', `High-Res 2048px Composite Iteration #${currentIteration.iteration_number}`, {
-      resolution: '2048x2048',
-      officer_badge: currentOfficer.badge_number,
-    });
-    triggerToast('2048×2048 PNG Composite exported with forensic footer.');
-  };
-
-  // Flag Suspect Lead
+  // Flag / Unflag Suspect Lead
   const handleFlagLead = (suspect: MugshotRecord) => {
+    if (permissionMode === 'read_only') return;
+
     const alreadyFlagged = flaggedLeads.some(l => l.id === suspect.id);
     if (alreadyFlagged) {
       setFlaggedLeads(prev => prev.filter(l => l.id !== suspect.id));
-      triggerToast(`Removed lead flag for ${suspect.full_name}`);
+      triggerToast(`Lead removed: ${suspect.full_name}`);
     } else {
       setFlaggedLeads(prev => [...prev, suspect]);
       handleLogAuditEvent('FLAGGED_SUSPECT_MATCH', `Suspect ${suspect.record_code} (${suspect.full_name})`, {
@@ -237,11 +253,220 @@ export const App: React.FC = () => {
         similarity_score: suspect.similarity_score,
         matched_attributes: suspect.matched_attributes,
       });
-      triggerToast(`Lead flagged: ${suspect.full_name} (${suspect.similarity_score}% Match)`);
+      triggerToast(`Lead attached to case: ${suspect.full_name} (${suspect.similarity_score}% match)`);
     }
   };
 
-  // Load cases from backend on mount if available
+  // Main Witness Message & Sketch Generation
+  const handleWitnessMessage = (
+    text: string,
+    confidence: 'certain' | 'likely' | 'maybe' | 'not_sure',
+    language: SupportedLanguage
+  ) => {
+    if (permissionMode === 'read_only') return;
+
+    setIsLoading(true);
+
+    const newMsgId = `msg-${Date.now()}`;
+    const userMessage: ChatMessage = {
+      id: newMsgId,
+      sender: 'witness',
+      text,
+      language,
+      timestamp: new Date().toISOString(),
+      confidence,
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+
+    // Call Backend API with Cloudflare Worker & Gemini failover
+    apiClient
+      .generateOrRefineSketch(activeCase.id, {
+        parent_iteration_id: currentIteration.id,
+        witness_prompt: text,
+        render_style: renderStyle,
+        confidence,
+        language,
+      })
+      .then((serverIteration: any) => {
+        const nextIterationNumber = serverIteration.iteration_number || iterations.length + 1;
+        const mappedIteration: SketchIteration = {
+          id: serverIteration.id || `iter-${nextIterationNumber}`,
+          case_id: serverIteration.case_id || activeCase.id,
+          iteration_number: nextIterationNumber,
+          parent_iteration_id: serverIteration.parent_iteration_id || currentIteration.id,
+          image_url: serverIteration.image_url?.startsWith('/static')
+            ? `http://localhost:8000${serverIteration.image_url}`
+            : (serverIteration.image_url || currentIteration.image_url),
+          witness_prompt: serverIteration.witness_prompt || text,
+          witness_likeness_score:
+            serverIteration.witness_likeness_score ||
+            Math.min(9.8, parseFloat((currentIteration.witness_likeness_score + 0.6).toFixed(1))),
+          ai_provider:
+            serverIteration.ai_provider_used || serverIteration.ai_provider || 'gemini-2.5-flash-image',
+          latency_ms: serverIteration.generation_latency_ms || serverIteration.latency_ms || 2100,
+          created_at: serverIteration.created_at || new Date().toISOString(),
+          facial_state:
+            serverIteration.facial_state_snapshot ||
+            serverIteration.facial_state ||
+            currentIteration.facial_state,
+          changed_fields: (serverIteration.changed_traits ||
+            serverIteration.changed_fields || ['jawline_chin']) as (keyof FacialStateJSON)[],
+          confidence_rating: confidence === 'not_sure' ? 'maybe' : confidence,
+        };
+
+        setIterations(prev => [...prev, mappedIteration]);
+        setCurrentIterationId(mappedIteration.id);
+
+        const systemReply: ChatMessage = {
+          id: `sys-${Date.now()}`,
+          sender: 'system',
+          text: `Iteration #${mappedIteration.iteration_number} generated via ${mappedIteration.ai_provider}. Seed #${activeCase.case_seed} locked.`,
+          timestamp: new Date().toISOString(),
+          changed_traits: mappedIteration.changed_fields,
+        };
+        setMessages(prev => [...prev, systemReply]);
+
+        handleLogAuditEvent('REFINED_FACIAL_FEATURE', `Iteration #${mappedIteration.iteration_number}`, {
+          parent_iteration: currentIteration.id,
+          witness_prompt: text,
+          changed_fields: mappedIteration.changed_fields,
+          confidence,
+          provider: mappedIteration.ai_provider,
+        });
+
+        setIsLoading(false);
+      })
+      .catch(() => {
+        // Fallback gracefully to local procedural generator if server is offline
+        const changedFields: (keyof FacialStateJSON)[] = [];
+        const updatedFacialState = { ...currentIteration.facial_state };
+
+        const lower = text.toLowerCase();
+        if (lower.includes('jaw') || lower.includes('chin')) {
+          updatedFacialState.jawline_chin = lower.includes('square')
+            ? 'Broad square mandibular jawline with blunt chin'
+            : 'Tapered angular jaw with narrower pointed chin';
+          changedFields.push('jawline_chin');
+        }
+        if (lower.includes('eye') || lower.includes('brow')) {
+          updatedFacialState.eyes = lower.includes('narrow') || lower.includes('almond')
+            ? 'Narrow deep-set almond eyes with intense gaze'
+            : 'Wider hooded almond eyes set slightly further apart';
+          changedFields.push('eyes');
+        }
+        if (lower.includes('nose')) {
+          updatedFacialState.nose = lower.includes('hook') || lower.includes('crook')
+            ? 'Crooked bridge with slight hooked downward tip'
+            : 'Straight narrow aquiline nose bridge';
+          changedFields.push('nose');
+        }
+        if (lower.includes('scar') || lower.includes('mark')) {
+          updatedFacialState.scars_marks_tattoos =
+            'Vertical scar above right eyebrow AND distinct knife scar on left cheek';
+          changedFields.push('scars_marks_tattoos');
+        }
+        if (lower.includes('beard') || lower.includes('mustache') || lower.includes('stubble')) {
+          updatedFacialState.facial_hair = lower.includes('clean')
+            ? 'Clean-shaven lower face with visible bone contours'
+            : 'Heavy dark 5 o-clock stubble with faint mustache contour';
+          changedFields.push('facial_hair');
+        }
+
+        if (changedFields.length === 0) {
+          changedFields.push('jawline_chin', 'eyes');
+        }
+
+        const nextIterationNumber = iterations.length + 1;
+        const nextIterationId = `iter-${nextIterationNumber}`;
+
+        const newImageUrl = generateForensicSketchDataUrl(
+          updatedFacialState,
+          renderStyle,
+          activeCase.case_seed,
+          nextIterationNumber
+        );
+
+        const fallbackIteration: SketchIteration = {
+          id: nextIterationId,
+          case_id: activeCase.id,
+          iteration_number: nextIterationNumber,
+          parent_iteration_id: currentIteration.id,
+          image_url: newImageUrl,
+          witness_prompt: text,
+          witness_likeness_score: Math.min(
+            9.8,
+            parseFloat((currentIteration.witness_likeness_score + 0.6).toFixed(1))
+          ),
+          ai_provider: 'local-procedural',
+          latency_ms: Math.floor(Math.random() * 800) + 1800,
+          created_at: new Date().toISOString(),
+          facial_state: updatedFacialState,
+          changed_fields: changedFields,
+          confidence_rating: confidence === 'not_sure' ? 'maybe' : confidence,
+        };
+
+        setIterations(prev => [...prev, fallbackIteration]);
+        setCurrentIterationId(nextIterationId);
+
+        const systemReply: ChatMessage = {
+          id: `sys-${Date.now()}`,
+          sender: 'system',
+          text: `Iteration #${nextIterationNumber} synthesized via procedural engine. Seed #${activeCase.case_seed} locked.`,
+          timestamp: new Date().toISOString(),
+          changed_traits: changedFields,
+        };
+        setMessages(prev => [...prev, systemReply]);
+
+        handleLogAuditEvent('REFINED_FACIAL_FEATURE', `Iteration #${nextIterationNumber}`, {
+          parent_iteration: currentIteration.id,
+          witness_prompt: text,
+          changed_fields: changedFields,
+          confidence,
+          provider: 'local-procedural',
+        });
+
+        setIsLoading(false);
+      });
+  };
+
+  // Update Likeness rating
+  const handleUpdateLikeness = (score: number) => {
+    if (permissionMode === 'read_only') return;
+
+    setIterations(prev =>
+      prev.map(it => (it.id === currentIteration.id ? { ...it, witness_likeness_score: score } : it))
+    );
+    handleLogAuditEvent('UPDATED_LIKENESS_SCORE', `Iteration #${currentIteration.iteration_number}`, {
+      likeness_score: score,
+      officer_badge: currentOfficer.badge_number,
+    });
+  };
+
+  // Adopt Variation
+  const handleSelectVariation = (variationIteration: SketchIteration) => {
+    if (permissionMode === 'read_only') return;
+
+    const nextIterationNumber = iterations.length + 1;
+    const forkedIteration: SketchIteration = {
+      ...variationIteration,
+      id: `iter-${nextIterationNumber}-var`,
+      iteration_number: nextIterationNumber,
+      parent_iteration_id: currentIteration.id,
+      witness_prompt: `[Adopted Variation] ${variationIteration.witness_prompt || 'Surgical trait adjustment'}`,
+      created_at: new Date().toISOString(),
+    };
+
+    setIterations(prev => [...prev, forkedIteration]);
+    setCurrentIterationId(forkedIteration.id);
+
+    handleLogAuditEvent('REVERTED_ITERATION', `Iteration #${nextIterationNumber}`, {
+      adopted_from: variationIteration.id,
+      variation_label: variationIteration.variation_label,
+    });
+  };
+
+  // Load cases from backend
   useEffect(() => {
     apiClient
       .getCases()
@@ -254,13 +479,13 @@ export const App: React.FC = () => {
           });
         }
       })
-      .catch(() => {
-        // Backend offline, fallback to initial demo cases
-      });
+      .catch(() => {});
   }, []);
 
-  // Create new case with backend synchronization
+  // Create Case
   const handleCreateCase = (newCase: CaseFile) => {
+    if (permissionMode === 'read_only') return;
+
     setCases(prev => [newCase, ...prev]);
     setActiveCase(newCase);
     handleLogAuditEvent('CREATED_CASE_FILE', `New Case ${newCase.case_number}`, {
@@ -282,165 +507,60 @@ export const App: React.FC = () => {
           setCases(prev => prev.map(c => c.id === newCase.id ? { ...c, id: createdServerCase.id } : c));
         }
       })
-      .catch(() => {
-        // Graceful offline fallback already handled in state
-      });
+      .catch(() => {});
 
-    triggerToast(`Opened new case: ${newCase.case_number}`);
+    triggerToast(`Created case file: ${newCase.case_number}`);
   };
 
-  // Select case from switcher
+  // Switch Case
   const handleSelectCase = (selectedCase: CaseFile) => {
     setActiveCase(selectedCase);
     handleLogAuditEvent('OPENED_CASE_FILE', `Switched to Case ${selectedCase.case_number}`, {
       case_number: selectedCase.case_number,
     });
-    triggerToast(`Switched to: ${selectedCase.case_number}`);
+    triggerToast(`Opened: ${selectedCase.case_number}`);
   };
 
-  return (
-    <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-surface-base text-ink-body flex flex-col font-sans relative selection:bg-accent/20 selection:text-ink-heading">
-      {/* Editorial noise texture overlay */}
-      <div className="noise-overlay" />
+  // If unauthenticated, show Institutional Permission Gateway
+  if (!session) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
 
-      {/* Global Toast Notification */}
+  // Once authenticated, show Modular Workspace
+  return (
+    <>
+      {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-surface-elevated border border-line-medium text-ink-heading px-4 py-2.5 rounded-lg shadow-xl flex items-center space-x-2.5 text-xs font-sans">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent"></span>
+        <div className="fixed bottom-5 right-5 z-50 bg-[#18181B] text-white px-3.5 py-2 rounded text-xs font-mono shadow-lg flex items-center gap-2 border border-black">
+          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Clean Minimal Header */}
-      <Header
-        onOpenBurgerMenu={() => setIsDrawerOpen(true)}
-        activeCase={activeCase}
-        onOpenCaseSwitcher={() => setIsCaseSwitcherOpen(true)}
-        onOpenNewCase={() => setIsNewCaseModalOpen(true)}
-        onExportPdf={handleExportPdf}
+      <MainWorkspace
         currentOfficer={currentOfficer}
-      />
-
-      {/* Side Drawer Menu */}
-      <SideDrawer
-        isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        renderStyle={renderStyle}
-        setRenderStyle={setRenderStyle}
-        currentOfficer={currentOfficer}
-        setCurrentOfficer={setCurrentOfficer}
+        permissionMode={permissionMode}
+        onSignOut={handleSignOut}
         activeCase={activeCase}
-        onOpenMatchModal={() => {
-          setIsDrawerOpen(false);
-          setIsMatchModalOpen(true);
-        }}
-        onToggleDisguiseDrawer={() => {
-          setActiveTab('studio');
-          setCanvasToolTrigger(prev => ({ ...prev, showDisguises: !prev.showDisguises }));
-          setIsDrawerOpen(false);
-        }}
-        onToggleAnatomyInspector={() => {
-          setActiveTab('studio');
-          setCanvasToolTrigger(prev => ({ ...prev, showInspector: !prev.showInspector }));
-          setIsDrawerOpen(false);
-        }}
-        onToggleSplitComparison={() => {
-          setActiveTab('studio');
-          setCanvasToolTrigger({ tabMode: 'canvas', isCompareMode: true });
-          setIsDrawerOpen(false);
-        }}
-        onToggleVariationsView={() => {
-          setActiveTab('studio');
-          setCanvasToolTrigger({ tabMode: 'variations', isCompareMode: false });
-          setIsDrawerOpen(false);
-        }}
-        onExportPng={() => {
-          setIsDrawerOpen(false);
-          handleExportPng();
-        }}
-        onExportPdf={() => {
-          setIsDrawerOpen(false);
-          handleExportPdf();
-        }}
-        isAuditVerified={isAuditVerified}
-      />
-
-      {/* New Case Modal */}
-      <NewCaseModal
-        isOpen={isNewCaseModalOpen}
-        onClose={() => setIsNewCaseModalOpen(false)}
-        onCreateCase={handleCreateCase}
-        leadOfficerId={currentOfficer.officer_id}
-      />
-
-      {/* Case Switcher Modal */}
-      <CaseSwitcherModal
-        isOpen={isCaseSwitcherOpen}
-        onClose={() => setIsCaseSwitcherOpen(false)}
         cases={cases}
-        activeCaseId={activeCase.id}
         onSelectCase={handleSelectCase}
-        onOpenNewCase={() => {
-          setIsCaseSwitcherOpen(false);
-          setIsNewCaseModalOpen(true);
-        }}
-      />
-
-      {/* Main Content Viewport */}
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {activeTab === 'studio' && (
-          <SketchStudio
-            caseFile={activeCase}
-            currentOfficer={currentOfficer}
-            renderStyle={renderStyle}
-            iterations={iterations}
-            setIterations={setIterations}
-            currentIterationId={currentIterationId}
-            setCurrentIterationId={setCurrentIterationId}
-            messages={messages}
-            setMessages={setMessages}
-            onLogAuditEvent={handleLogAuditEvent}
-            externalToolTrigger={canvasToolTrigger}
-          />
-        )}
-
-        {activeTab === 'dashboard' && (
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-            <InvestigationDashboard
-              caseFile={activeCase}
-              currentOfficer={currentOfficer}
-              currentIteration={currentIteration}
-              flaggedLeads={flaggedLeads}
-              onOpenMatchModal={() => setIsMatchModalOpen(true)}
-              onNavigateToStudio={() => setActiveTab('studio')}
-              isAuditVerified={isAuditVerified}
-            />
-          </div>
-        )}
-
-        {activeTab === 'audit' && (
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-            <AuditLogView
-              auditLogs={auditLogs}
-              onVerifyChain={handleVerifyChain}
-              isVerified={isAuditVerified}
-            />
-          </div>
-        )}
-      </main>
-
-      {/* Suspect Database Match Modal */}
-      <MatchModal
-        isOpen={isMatchModalOpen}
-        onClose={() => setIsMatchModalOpen(false)}
-        caseFile={activeCase}
-        currentOfficer={currentOfficer}
-        onFlagLead={handleFlagLead}
+        onCreateCase={handleCreateCase}
+        iterations={iterations}
+        currentIterationId={currentIterationId}
+        onSelectIteration={setCurrentIterationId}
+        messages={messages}
+        onSendMessage={handleWitnessMessage}
+        isLoading={isLoading}
+        onUpdateLikeness={handleUpdateLikeness}
+        onSelectVariation={handleSelectVariation}
         flaggedLeads={flaggedLeads}
+        onFlagLead={handleFlagLead}
+        auditLogs={auditLogs}
+        onVerifyChain={handleVerifyChain}
+        isAuditVerified={isAuditVerified}
+        onExportPdf={handleExportPdf}
       />
-    </div>
+    </>
   );
 };
 

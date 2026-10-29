@@ -65,8 +65,10 @@ async def health_check():
             "active_healthy_keys": pool_status["active_healthy_keys"],
         },
         "cloudflare_worker": {
-            "status": "configured",
+            "status": "configured" if settings.CF_WORKER_ENDPOINTS else "unconfigured",
             "url": settings.CF_WORKER_URL,
+            "total_workers": len(settings.CF_WORKER_ENDPOINTS),
+            "endpoints": [url for url, _ in settings.CF_WORKER_ENDPOINTS],
             "model": settings.CF_IMAGE_MODEL,
         },
         "ai_primary": "cloudflare-flux-schnell",

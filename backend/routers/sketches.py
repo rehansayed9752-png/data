@@ -1,3 +1,4 @@
+import random
 import uuid
 from pathlib import Path
 from typing import List, Optional
@@ -49,7 +50,7 @@ async def generate_sketch(
             witness_alias="Active Witness",
             status="active",
             render_style="forensic_graphite",
-            case_seed=9204,
+            case_seed=random.randint(100000, 999999),
             lead_officer_id=lead_officer_id,
             current_facial_state=FacialStateJSON().model_dump(),
         )
@@ -107,7 +108,7 @@ async def generate_sketch(
     render_style = sketch_req.render_style_override or case.render_style
     full_prompt = build_full_diffusion_prompt(compilation_result.updated_state, render_style)
 
-    # 2. Generate sketch
+    # 2. Generate sketch with identity lock
     saved_img_path, provider, latency_ms = await generate_or_refine_sketch(
         case_id=case.id,
         iteration_number=current_iter_num,
@@ -116,6 +117,7 @@ async def generate_sketch(
         delta_edit_instruction=compilation_result.delta_edit_instruction,
         render_style=render_style,
         previous_image_path=prev_image_path,
+        changed_traits=compilation_result.changed_traits,
     )
 
     img_filename = Path(saved_img_path).name
@@ -187,7 +189,7 @@ async def generate_variations(
     case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
     case = case_res.scalar_one_or_none()
     if not case:
-        lead_officer_id = sketch_req.officer_id or "11111111-1111-1111-1111-111111111111"
+        lead_officer_id = var_req.officer_id or "11111111-1111-1111-1111-111111111111"
         case = CaseModel(
             id=case_id,
             case_number=f"CASE-{case_id.upper()}",
@@ -196,7 +198,7 @@ async def generate_variations(
             witness_alias="Active Witness",
             status="active",
             render_style="forensic_graphite",
-            case_seed=9204,
+            case_seed=random.randint(100000, 999999),
             lead_officer_id=lead_officer_id,
             current_facial_state=FacialStateJSON().model_dump(),
         )
@@ -259,7 +261,7 @@ async def simulate_disguise(
     case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
     case = case_res.scalar_one_or_none()
     if not case:
-        lead_officer_id = sketch_req.officer_id or "11111111-1111-1111-1111-111111111111"
+        lead_officer_id = disguise_req.officer_id or "11111111-1111-1111-1111-111111111111"
         case = CaseModel(
             id=case_id,
             case_number=f"CASE-{case_id.upper()}",
@@ -268,7 +270,7 @@ async def simulate_disguise(
             witness_alias="Active Witness",
             status="active",
             render_style="forensic_graphite",
-            case_seed=9204,
+            case_seed=random.randint(100000, 999999),
             lead_officer_id=lead_officer_id,
             current_facial_state=FacialStateJSON().model_dump(),
         )
@@ -291,6 +293,7 @@ async def simulate_disguise(
         case_id=case.id,
         iteration_number=iteration.iteration_number,
         base_image_path=local_img_path,
+        case_seed=case.case_seed,
         disguise_type=disguise_req.disguise_type,
         render_style=case.render_style,
     )
@@ -372,7 +375,7 @@ async def export_highres(
     case_res = await db.execute(select(CaseModel).where(CaseModel.id == case_id))
     case = case_res.scalar_one_or_none()
     if not case:
-        lead_officer_id = sketch_req.officer_id or "11111111-1111-1111-1111-111111111111"
+        lead_officer_id = officer_id or "11111111-1111-1111-1111-111111111111"
         case = CaseModel(
             id=case_id,
             case_number=f"CASE-{case_id.upper()}",
@@ -381,7 +384,7 @@ async def export_highres(
             witness_alias="Active Witness",
             status="active",
             render_style="forensic_graphite",
-            case_seed=9204,
+            case_seed=random.randint(100000, 999999),
             lead_officer_id=lead_officer_id,
             current_facial_state=FacialStateJSON().model_dump(),
         )

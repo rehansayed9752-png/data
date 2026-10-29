@@ -12,20 +12,26 @@ logger = logging.getLogger("facial_state_engine")
 
 RENDER_STYLE_INTELLIGENCE = {
     "forensic_graphite": (
-        "Authentic police forensic artist composite sketch, hand-drawn with 2B and 4B graphite "
-        "pencils on clean white paper, detailed anatomical cross-hatching, frontal mugshot "
-        "passport view, neutral expression, symmetrical studio lighting, monochrome greyscale. "
-        "No text, no watermarks, no rulers."
+        "Close-up frontal portrait drawing of one civilian person, hand-drawn with soft 2B graphite pencil "
+        "on a completely blank, solid pure white paper background. "
+        "Clean natural pencil shading, neutral expression, looking straight at viewer, head and shoulders only, "
+        "plain empty white background."
     ),
     "charcoal_shaded": (
-        "High-contrast forensic charcoal composite drawing, deep anatomical shading on cheekbones "
-        "and orbital sockets, frontal mugshot view, textured sketch paper, monochrome charcoal."
+        "Close-up frontal portrait drawing of one civilian person, hand-drawn in matte charcoal pencil "
+        "on a completely blank, solid off-white paper background, soft natural shading, empty background."
     ),
     "photorealistic_id": (
-        "Photorealistic police identification frontal mugshot portrait, neutral grey background, "
-        "flat studio lighting, realistic skin texture and pores, looking directly at camera."
+        "Close-up frontal studio portrait photograph of one civilian person against a plain, solid light grey wall, "
+        "natural even studio lighting, neutral expression."
     ),
 }
+
+SKIP_DEFAULT_PREFIXES = (
+    "no ", "none", "n/a", "nil", "unspecified", "clean-shaven",
+    "normal proportioned", "medium height smooth", "natural medium",
+    "standard almond", "straight medium", "moderate tapered", "medium balanced"
+)
 
 
 def _rule_based_state_update(
@@ -75,17 +81,22 @@ def _rule_based_state_update(
         matched = [k for k in keywords if k in lowered]
         if matched:
             changed.append(region)
-            state_dict[region] = f"Witness noted {', '.join(matched)} ({combined_input.strip()})"
+            state_dict[region] = combined_input.strip()
             badge_name = region.replace("_", " ").title()
             xai_badges.append(f"{badge_name} Refinement")
 
     if not changed and is_initial:
         changed = ["head_face_shape", "eyes", "nose", "jawline_chin"]
-        state_dict["head_face_shape"] = "Oval contoured face from witness description"
-        state_dict["eyes"] = f"Neutral gaze: {combined_input[:60]}"
-        state_dict["nose"] = "Proportionate nose"
+        state_dict["head_face_shape"] = "Oval contoured face"
+        state_dict["eyes"] = "Neutral gaze almond eyes"
+        state_dict["nose"] = "Proportionate straight nose"
         state_dict["jawline_chin"] = "Natural defined jawline"
         xai_badges = ["Craniofacial Proportions Base", "Orbital Positioning Base"]
+    elif not changed and not is_initial:
+        # Refinement fallback if keywords didn't hit: map to jawline/facial_hair or nose as general adjustment
+        changed = ["jawline_chin"]
+        state_dict["jawline_chin"] = combined_input.strip()[:80]
+        xai_badges = ["Facial Contour Precision Tuning"]
 
     delta = f"Modify traits: {', '.join(changed)}" if changed else "Refine facial composite based on description"
     return StateCompilationResult(
@@ -143,7 +154,7 @@ async def compile_facial_state(
     )
 
     def _call_gemini_compilation(client: genai.Client, slot: KeySlot) -> StateCompilationResult:
-        candidate_models = [settings.GEMINI_TEXT_MODEL, "gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-3.5-flash-lite"]
+        candidate_models = [settings.GEMINI_TEXT_MODEL, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-lite-latest"]
         last_error = None
         for model_id in candidate_models:
             if not model_id:
@@ -176,28 +187,56 @@ async def compile_facial_state(
             model_name=settings.GEMINI_TEXT_MODEL,
         )
         logger.info(f"[FacialStateEngine] Successfully compiled state via {provider_tag}")
+        
+        # Post-compilation verification: detect any keys that changed between states
+        current_dict = current_state.model_dump()
+        updated_dict = result.updated_state.model_dump()
+        detected_diff = [k for k, v in updated_dict.items() if v != current_dict.get(k) and v]
+        
+        # Merge detected traits with model-reported changed_traits
+        merged_traits = list(dict.fromkeys(result.changed_traits + detected_diff))
+        if not merged_traits and not is_initial:
+            rule_fallback = _rule_based_state_update(current_state, combined_input, is_initial)
+            merged_traits = rule_fallback.changed_traits
+        result.changed_traits = merged_traits
+
         return result
     except Exception as e:
         logger.warning(f"[FacialStateEngine] Key pool failover exhausted or error ({e}), reverting to rule-based fallback")
         return _rule_based_state_update(current_state, combined_input, is_initial)
 
 
-def build_full_diffusion_prompt(state: FacialStateJSON, render_style: RenderStyle) -> str:
+def build_full_diffusion_prompt(state: FacialStateJSON, render_style: RenderStyle = "forensic_graphite") -> str:
+    """
+    Outputs a single clean, natural sentence with ZERO colons (:), ZERO pipes (|),
+    and ZERO 'No ...' negative phrases so FLUX never draws anatomy callouts, text, or hats.
+    """
     style_prefix = RENDER_STYLE_INTELLIGENCE.get(render_style, RENDER_STYLE_INTELLIGENCE["forensic_graphite"])
-    traits = [
-        f"Subject: {state.age_gender_ethnicity}",
-        f"Face shape: {state.head_face_shape}",
-        f"Hair: {state.hair_style_texture}",
-        f"Forehead: {state.forehead}",
-        f"Eyebrows: {state.eyebrows}",
-        f"Eyes: {state.eyes}",
-        f"Nose: {state.nose}",
-        f"Cheeks: {state.cheeks}",
-        f"Jawline and chin: {state.jawline_chin}",
-        f"Mouth and lips: {state.mouth_lips}",
-        f"Ears: {state.ears}",
-        f"Facial hair: {state.facial_hair}",
-        f"Distinguishing scars/marks: {state.scars_marks_tattoos}",
-        f"Accessories: {state.accessories}",
+
+    ordered_values = [
+        state.age_gender_ethnicity,
+        state.head_face_shape,
+        state.hair_style_texture,
+        state.eyebrows,
+        state.eyes,
+        state.nose,
+        state.cheeks,
+        state.jawline_chin,
+        state.mouth_lips,
+        state.facial_hair,
+        state.scars_marks_tattoos,
+        state.accessories,
     ]
-    return f"{style_prefix} {' | '.join(traits)}"
+
+    descriptive_parts = []
+    for val in ordered_values:
+        if not val:
+            continue
+        cleaned = val.strip().rstrip(".")
+        low = cleaned.lower()
+        if any(low.startswith(p) for p in SKIP_DEFAULT_PREFIXES):
+            continue
+        descriptive_parts.append(cleaned)
+
+    person_desc = ", ".join(descriptive_parts) if descriptive_parts else "adult male with balanced oval face and short dark hair"
+    return f"{style_prefix} Portrait of a {person_desc}. Solid plain white background."
