@@ -582,7 +582,7 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
                   onClick={() => setShowInspector(false)}
                   className="text-ink-muted hover:text-ink-heading text-xs font-mono p-1"
                 >
-                  ✕
+                  x
                 </button>
               </div>
 

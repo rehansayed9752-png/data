@@ -93,7 +93,9 @@ async def create_case(
     )
     db.add(new_case)
     await db.commit()
-    await db.refresh(new_case)
+    stmt = select(CaseModel).options(selectinload(CaseModel.iterations)).where(CaseModel.id == new_case.id)
+    res = await db.execute(stmt)
+    new_case = res.scalar_one()
 
     # Log to audit log
     await log_audit_event(
