@@ -27,6 +27,8 @@ import {
 } from '../../types/forensic';
 import { generateForensicSketchDataUrl } from '../../utils/proceduralSketch';
 import { ForensicScanOverlay } from '../ui/ForensicAnimations';
+import { FacialLandmarkOverlay, FacialLandmark } from '../studio/FacialLandmarkOverlay';
+import { Crosshair } from 'lucide-react';
 
 interface CompositeStudioModuleProps {
   caseFile: CaseFile;
@@ -93,6 +95,7 @@ export const CompositeStudioModule: React.FC<CompositeStudioModuleProps> = ({
 
   // Sketch inspection state
   const [isLoupeActive, setIsLoupeActive] = useState(false);
+  const [showLandmarks, setShowLandmarks] = useState(true);
   const [loupePos, setLoupePos] = useState({ x: 220, y: 240 });
   const [currentLandmark, setCurrentLandmark] = useState('CRANIOFACIAL LANDMARK');
   const [isCompareMode, setIsCompareMode] = useState(false);
@@ -503,6 +506,21 @@ export const CompositeStudioModule: React.FC<CompositeStudioModuleProps> = ({
               <span className="hidden sm:inline">Loupe: {isLoupeActive ? 'On' : 'Off'}</span>
             </button>
 
+                        {/* Facial Landmark Pinning Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowLandmarks(prev => !prev)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                showLandmarks
+                  ? 'bg-[#18181B] border-[#18181B] text-white'
+                  : 'bg-white border-[#E4E4E0] hover:bg-[#F4F4F5] text-[#18181B]'
+              }`}
+              title="Toggle Interactive Facial Landmark Pins"
+            >
+              <Crosshair className="w-3.5 h-3.5" strokeWidth={1.5} />
+              <span className="hidden sm:inline">Landmarks: {showLandmarks ? 'Pins On' : 'Pins Off'}</span>
+            </button>
+
             {/* Compare Previous Toggle */}
             {previousIteration && (
               <button
@@ -622,6 +640,16 @@ export const CompositeStudioModule: React.FC<CompositeStudioModuleProps> = ({
                     />
                   )}
 
+                  
+              {/* Interactive 2D Facial Landmark Overlay */}
+              <FacialLandmarkOverlay
+                isVisible={showLandmarks && !isCompareMode && !!currentIteration.image_url}
+                facialState={currentIteration.facial_state}
+                disabled={isReadOnly || isLoading}
+                onApplyPrompt={(prompt) => {
+                  onSendMessage(prompt, 'certain', selectedLanguage);
+                }}
+              />
                   {/* Compare Split View */}
                   {isCompareMode && previousIteration && (
                     <div className={`relative w-full h-full overflow-hidden select-none transition-all duration-300 ${isLoading ? 'opacity-60 blur-[1px]' : 'opacity-100'}`}>
