@@ -7,7 +7,10 @@ import {
   Shield,
   FileDown,
   Lock,
+  Sun,
+  Moon,
 } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 import {
   OfficerProfile,
   CaseFile,
@@ -82,6 +85,7 @@ export const MainWorkspace: React.FC<MainWorkspaceProps> = ({
   const [isCaseSwitcherOpen, setIsCaseSwitcherOpen] = useState(false);
   const [isNewCaseModalOpen, setIsNewCaseModalOpen] = useState(false);
 
+  const { theme, toggleTheme } = useTheme();
   const isReadOnly = permissionMode === 'read_only';
 
   const fallbackIteration: SketchIteration = {
@@ -218,6 +222,21 @@ export const MainWorkspace: React.FC<MainWorkspaceProps> = ({
             <span>{currentOfficer.badge_number}</span>
             <span className="text-[#A1A1AA]">({currentOfficer.full_name.split(' ').pop()})</span>
           </div>
+
+                    {/* Day / Night Theme Toggle */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="p-1.5 rounded border border-[#E4E4E0] hover:border-[#18181B] bg-white hover:bg-[#F9F9F8] text-[#18181B] transition-colors cursor-pointer flex items-center justify-center"
+            title={theme === 'dark' ? 'Switch to Day Mode' : 'Switch to Night Mode'}
+            aria-label="Toggle Day/Night mode"
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-amber-400" strokeWidth={1.8} />
+            ) : (
+              <Moon className="w-4 h-4 text-[#52525B]" strokeWidth={1.8} />
+            )}
+          </button>
 
           {/* Export PDF Dossier */}
           <button

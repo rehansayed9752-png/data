@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 :root {
-  /* Institutional Matte Palette */
+  /* Institutional Matte Palette (Day / Light) */
   --bg-primary: #F5F5F2;
   --surface-card: #FFFFFF;
   --surface-subtle: #F9F9F8;
@@ -22,6 +22,26 @@
   --accent-amber: #B45309;
   --accent-emerald: #065F46;
   --accent-red: #991B1B;
+}
+
+.dark {
+  /* Tactical Night Palette (Night / Dark) */
+  --bg-primary: #090A0F;
+  --surface-card: #12141C;
+  --surface-subtle: #181B26;
+  --line-structural: #272B38;
+  --line-subtle: #1E222F;
+
+  --text-primary: #F3F4F6;
+  --text-muted: #A1A1AA;
+  --text-faint: #71717A;
+  --text-mono: #E4E4E7;
+
+  --action-primary: #E4E4E7;
+  --action-blue: #3B82F6;
+  --accent-amber: #F59E0B;
+  --accent-emerald: #10B981;
+  --accent-red: #EF4444;
 }
 
 * {
@@ -49,6 +69,11 @@ html, body {
   color: #18181B;
 }
 
+.dark ::selection {
+  background: #272B38;
+  color: #F3F4F6;
+}
+
 /* Utilitarian Micro Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
@@ -57,16 +82,75 @@ html, body {
 ::-webkit-scrollbar-track {
   background: #F5F5F2;
 }
+.dark ::-webkit-scrollbar-track {
+  background: #090A0F;
+}
 ::-webkit-scrollbar-thumb {
   background: #D4D4D0;
   border-radius: 3px;
 }
+.dark ::-webkit-scrollbar-thumb {
+  background: #272B38;
+}
 ::-webkit-scrollbar-thumb:hover {
   background: #A1A1AA;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #3F3F46;
 }
 
 /* Focus Ring */
 :focus-visible {
   outline: 2px solid #18181B;
   outline-offset: 1px;
+}
+.dark :focus-visible {
+  outline: 2px solid #3B82F6;
+}
+
+/* Night / Dark Mode Inversion Layer for seamless theme switching */
+.dark .bg-\[\#F5F5F2\] {
+  background-color: #090A0F !important;
+}
+.dark .bg-white {
+  background-color: #12141C !important;
+}
+.dark .bg-\[\#FAFAFA\] {
+  background-color: #181B26 !important;
+}
+.dark .bg-gray-50 {
+  background-color: #161924 !important;
+}
+.dark .bg-gray-100 {
+  background-color: #212636 !important;
+}
+.dark .border-\[\#E4E4E0\],
+.dark .border-\[\#E5E5E0\],
+.dark .border-gray-200 {
+  border-color: #242938 !important;
+}
+.dark .border-\[\#D4D4D0\],
+.dark .border-gray-300 {
+  border-color: #31374A !important;
+}
+.dark .text-\[\#18181B\] {
+  color: #F3F4F6 !important;
+}
+.dark .text-\[\#52525B\] {
+  color: #9CA3AF !important;
+}
+.dark .text-\[\#71717A\] {
+  color: #828A9E !important;
+}
+.dark .text-\[\#A1A1AA\] {
+  color: #6B7280 !important;
+}
+.dark .hover\:bg-\[\#F5F5F2\]:hover {
+  background-color: #181B26 !important;
+}
+.dark .hover\:bg-gray-50:hover {
+  background-color: #181B26 !important;
+}
+.dark .hover\:bg-gray-100:hover {
+  background-color: #242938 !important;
 }
